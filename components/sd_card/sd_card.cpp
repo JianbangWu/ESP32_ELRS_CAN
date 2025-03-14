@@ -1,5 +1,5 @@
 #include "sd_card.hpp"
-
+#include "errno.h"
 #include <stdint.h>
 #include <string.h>
 #include <sys/unistd.h>
@@ -137,6 +137,7 @@ sd_card::~sd_card()
 void sd_card::mount_sd(void)
 {
     ESP_LOGI(TAG, "Mounting filesystem");
+
     esp_err_t ret = esp_vfs_fat_sdmmc_mount(mount_point, &host, &slot_config, &mount_config, &card);
 
     if (ret != ESP_OK)
@@ -151,20 +152,214 @@ void sd_card::mount_sd(void)
             ESP_LOGE(TAG, "Failed to initialize the card (%s). "
                           "Make sure SD card lines have pull-up resistors in place.",
                      esp_err_to_name(ret));
-#ifdef CONFIG_DEBUG_PIN_CONNECTIONS
-            check_sd_card_pins(&config, pin_count);
-#endif
         }
         return;
     }
-    ESP_LOGI(TAG, "Filesystem mounted");
 
-    // Card has been initialized, print its properties
+    ESP_LOGI(TAG, "SD Card mounted at: %s", mount_point);
+
     sdmmc_card_print_info(stdout, card);
+
+    struct stat st;
+    if (stat("/sdcard", &st) != 0)
+    {
+        ESP_LOGE(TAG, "SD Card mount point does not exist!");
+    }
 }
 
 void sd_card::unmount_sd(void)
 {
     esp_vfs_fat_sdcard_unmount(mount_point, card);
     ESP_LOGI(TAG, "Card unmounted");
+}
+
+void sd_card::format_sd(void)
+{
+    esp_err_t err = esp_vfs_fat_sdcard_format_cfg(mount_point, card, &mount_config);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Card Format Err := %x", err);
+    }
+}
+
+bool sd_card::open_log_file(const char *log_filename)
+{
+    log_file = fopen(log_filename, "a");
+    if (log_file == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to open log file");
+        return false;
+    }
+    return true;
+}
+
+void sd_card::write_log(const char *log_message)
+{
+    if (log_file != NULL)
+    {
+        fprintf(log_file, "%s\n", log_message);
+        fflush(log_file); // Ensure data is written to the file
+    }
+}
+
+void sd_card::close_log_file()
+{
+    if (log_file != NULL)
+    {
+        fclose(log_file);
+        log_file = NULL;
+    }
+}
+
+// sd_card.cpp
+bool sd_card::open_user_data_file(const char *user_data_filename)
+{
+    user_data_file = fopen(user_data_filename, "a");
+    if (user_data_file == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to open user data file");
+        return false;
+    }
+    return true;
+}
+
+void sd_card::write_user_data(const char *data)
+{
+    if (user_data_file != NULL)
+    {
+        fprintf(user_data_file, "%s\n", data);
+        fflush(user_data_file); // Ensure data is written to the file
+    }
+}
+
+void sd_card::close_user_data_file()
+{
+    if (user_data_file != NULL)
+    {
+        fclose(user_data_file);
+        user_data_file = NULL;
+    }
+}
+
+void sd_card::read_log_to_serial(const char *log_filename)
+{
+    FILE *file = fopen(log_filename, "r");
+    if (file == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to open log file for reading");
+        return;
+    }
+
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), file) != NULL)
+    {
+        printf("%s", buffer); // Output to serial
+    }
+
+    fclose(file);
+}
+
+void sd_card::read_user_data_to_serial(const char *user_data_filename)
+{
+    FILE *file = fopen(user_data_filename, "r");
+    if (file == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to open user data file for reading");
+        return;
+    }
+
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), file) != NULL)
+    {
+        printf("%s", buffer); // Output to serial
+    }
+
+    fclose(file);
+}
+
+bool sd_card::write_json_to_file(const char *filename, cJSON *json)
+{
+    if (!json)
+    {
+        ESP_LOGE(TAG, "Invalid JSON object");
+        return false;
+    }
+
+    // 将 JSON 对象转换为字符串
+    char *json_string = cJSON_Print(json);
+    if (!json_string)
+    {
+        ESP_LOGE(TAG, "Failed to convert JSON to string");
+        return false;
+    }
+
+    // 使用 .txt 写入
+    char json_filepath[128];
+    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mount_point, filename);
+    ESP_LOGI(TAG, "Writing JSON to: [%s]", json_filepath);
+
+    FILE *file = fopen(json_filepath, "w");
+    if (!file)
+    {
+        ESP_LOGE(TAG, "Failed to open file: %s, errno: %d", json_filepath, errno);
+        cJSON_free(json_string);
+        return false;
+    }
+
+    fprintf(file, "%s", json_string); // 写入 JSON 字符串
+    fclose(file);
+    cJSON_free(json_string);
+
+    return true;
+}
+
+// 从文件读取 JSON 数据
+cJSON *sd_card::read_json_from_file(const char *filename)
+{
+    // 读取 JSON 文件路径
+    char json_filepath[128];
+    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mount_point, filename);
+    ESP_LOGI(TAG, "Reading JSON from: [%s]", json_filepath);
+
+    // 打开文件
+    FILE *file = fopen(json_filepath, "r");
+    if (!file)
+    {
+        ESP_LOGE(TAG, "Failed to open file: %s, errno: %d", json_filepath, errno);
+        return NULL;
+    }
+
+    // 获取文件大小
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // 分配内存并读取文件内容
+    char *json_data = (char *)malloc(file_size + 1);
+    if (!json_data)
+    {
+        ESP_LOGE(TAG, "Failed to allocate memory for JSON data");
+        fclose(file);
+        return NULL;
+    }
+
+    fread(json_data, 1, file_size, file);
+    json_data[file_size] = '\0'; // 添加字符串结束符
+    fclose(file);
+
+    ESP_LOGI(TAG, "Raw JSON read from file: %s", json_data);
+
+    // 解析 JSON 数据
+    cJSON *json = cJSON_Parse(json_data);
+    if (!json)
+    {
+        ESP_LOGE(TAG, "Failed to parse JSON data from file: %s", json_filepath);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "JSON successfully parsed from file: %s", json_filepath);
+    }
+
+    free(json_data); // 释放文件内容
+    return json;     // 返回解析后的 JSON 对象
 }

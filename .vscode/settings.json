@@ -89,6 +89,10 @@
         "streambuf": "cpp",
         "text_encoding": "cpp",
         "cinttypes": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "esp_sntp.h": "c",
+        "esp_netif_sntp.h": "c",
+        "protocol_examples_common.h": "c",
+        "cerrno": "cpp"
     }
 }
