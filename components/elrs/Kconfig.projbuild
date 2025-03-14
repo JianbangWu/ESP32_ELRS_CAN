@@ -1,0 +1,35 @@
+menu "ELRS Configuration"
+
+    config ELRS_PIN_TX
+        int "UART TX GPIO number"
+        default 1
+
+    config ELRS_PIN_RX
+        int "UART RX GPIO number"
+        default 2
+        
+    config ELRS_BAUDRATE
+        int "UART BAUDRATE"
+        default 420000
+
+    config ELRS_UART_PORT
+        int "UART PORT"
+        default 1
+        
+    config ELRS_UART_TX_BUFF_SIZE
+        int "Buffer Size"
+        default 1024
+        help
+            Buffer Size In KByte
+
+    config ELRS_UART_RX_BUFF_SIZE
+        int "Buffer Size"
+        default 1024
+        help
+            Buffer Size In KByte
+
+    config DEBUG_ENABLE_SERIAL_OUTPUT
+        bool "debug - draw channels in serial"
+        default N
+
+endmenu
