@@ -12,11 +12,9 @@
 void ELRS::rx_task()
 {
     std::vector<uint8_t> buffer;
-    int frame_count = 0;
+
     std::time_t last_time = std::time(nullptr);
 
-    static const char *RX_TASK_TAG = "RX_TASK";
-    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     uart_event_t event;
 
     for (;;)
@@ -44,7 +42,8 @@ void ELRS::rx_task()
                     size_t start_idx = std::distance(buffer.begin(), it);
                     if (check_crc(buffer.data() + start_idx, PACKET_SIZE))
                     {
-                        process_packet(buffer.data() + start_idx, frame_count, last_time);
+                        process_packet(buffer.data() + start_idx, last_time);
+                        ESP_LOGI(TAG, "ELRS FPS := %.2f", fps);
                         buffer.erase(buffer.begin(), buffer.begin() + start_idx + PACKET_SIZE);
                     }
                     else
@@ -86,13 +85,13 @@ bool ELRS::check_crc(const uint8_t *data, size_t len) const
     return crc == data[len - 1];
 }
 
-void ELRS::update_frame_rate(int &frame_count, std::time_t &last_time) const
+void ELRS::update_frame_rate(std::time_t &last_time)
 {
     std::time_t current_time = std::time(nullptr);
     double elapsed_time = difftime(current_time, last_time);
     if (elapsed_time >= 1.0)
     {
-        double fps = frame_count / elapsed_time;
+        fps = frame_count / elapsed_time;
         frame_count = 0;
         last_time = current_time;
 #ifdef DEBUG_ENABLE_SERIAL_OUTPUT
@@ -101,13 +100,14 @@ void ELRS::update_frame_rate(int &frame_count, std::time_t &last_time) const
 #endif
     }
 }
-void ELRS::process_packet(const uint8_t *data, int &frame_count, std::time_t &last_time)
-{
-    char bar_buffer[BAR_LENGTH + 1];
 
-    parse_channels(data, this->channels);
+void ELRS::process_packet(const uint8_t *data, std::time_t &last_time)
+{
+
+    parse_channels(data);
     frame_count++;
 #ifdef DEBUG_ENABLE_SERIAL_OUTPUT
+    char bar_buffer[BAR_LENGTH + 1];
     printf("\033[H"); // 清屏
     std::time_t t = std::time(nullptr);
     std::tm *tm_info = std::localtime(&t);
@@ -131,7 +131,7 @@ void ELRS::process_packet(const uint8_t *data, int &frame_count, std::time_t &la
     }
 
 #endif
-    update_frame_rate(frame_count, last_time);
+    update_frame_rate(last_time);
 }
 
 void ELRS::draw_bar(char *buffer, uint16_t value, uint16_t max_value) const
@@ -143,7 +143,7 @@ void ELRS::draw_bar(char *buffer, uint16_t value, uint16_t max_value) const
     buffer[BAR_LENGTH] = '\0';
 }
 
-void ELRS::parse_channels(const uint8_t *data, uint16_t *channels) const
+void ELRS::parse_channels(const uint8_t *data)
 {
     for (int i = 0; i < 16; ++i)
     {
