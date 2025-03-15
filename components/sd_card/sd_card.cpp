@@ -1,7 +1,6 @@
 #include "sd_card.hpp"
 #include "errno.h"
 #include <stdint.h>
-#include <string.h>
 #include <sys/unistd.h>
 #include <sys/stat.h>
 #include "esp_log.h"
@@ -24,7 +23,7 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 
 static void card_detect(void *arg)
 {
-    class sd_card *phandle = (class sd_card *)arg;
+    class SDCard *phandle = (class SDCard *)arg;
     gpio_num_t io_num;
     for (;;)
     {
@@ -49,7 +48,7 @@ static void card_detect(void *arg)
     }
 }
 
-sd_card::sd_card(/* args */)
+SDCard::SDCard(/* args */)
 {
 #ifdef CONFIG_ENABLE_DETECT_FEATURE
     gpio_config_t io_conf = {};
@@ -128,17 +127,17 @@ sd_card::sd_card(/* args */)
     mount_sd();
 }
 
-sd_card::~sd_card()
+SDCard::~SDCard()
 {
-    esp_vfs_fat_sdcard_unmount(mount_point, card);
+    esp_vfs_fat_sdcard_unmount(mt.c_str(), card);
     ESP_LOGI(TAG, "Card unmounted");
 }
 
-void sd_card::mount_sd(void)
+void SDCard::mount_sd(void)
 {
     ESP_LOGI(TAG, "Mounting filesystem");
 
-    esp_err_t ret = esp_vfs_fat_sdmmc_mount(mount_point, &host, &slot_config, &mount_config, &card);
+    esp_err_t ret = esp_vfs_fat_sdmmc_mount(mt.c_str(), &host, &slot_config, &mount_config, &card);
 
     if (ret != ESP_OK)
     {
@@ -156,7 +155,7 @@ void sd_card::mount_sd(void)
         return;
     }
 
-    ESP_LOGI(TAG, "SD Card mounted at: %s", mount_point);
+    ESP_LOGI(TAG, "SD Card mounted at: %s", mt.c_str());
 
     sdmmc_card_print_info(stdout, card);
 
@@ -167,99 +166,57 @@ void sd_card::mount_sd(void)
     }
 }
 
-void sd_card::unmount_sd(void)
+void SDCard::unmount_sd(void)
 {
-    esp_vfs_fat_sdcard_unmount(mount_point, card);
+    esp_vfs_fat_sdcard_unmount(mt.c_str(), card);
     ESP_LOGI(TAG, "Card unmounted");
 }
 
-void sd_card::format_sd(void)
+void SDCard::format_sd(void)
 {
-    esp_err_t err = esp_vfs_fat_sdcard_format_cfg(mount_point, card, &mount_config);
+    esp_err_t err = esp_vfs_fat_sdcard_format_cfg(mt.c_str(), card, &mount_config);
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "Card Format Err := %x", err);
     }
 }
 
-bool sd_card::open_log_file(const char *log_filename)
+bool SDCard::isFileSizeExceeded(std::string filename)
 {
-    log_file = fopen(log_filename, "a");
-    if (log_file == NULL)
+    FILE *file = fopen(filename.c_str(), "rb"); // 以二进制只读模式打开文件
+    if (!file)
     {
-        ESP_LOGE(TAG, "Failed to open log file");
+        // 文件不存在，未超过大小限制
         return false;
     }
-    return true;
+
+    // 获取文件大小
+    fseek(file, 0, SEEK_END);    // 移动到文件末尾
+    long fileSize = ftell(file); // 获取文件大小
+    fclose(file);                // 关闭文件
+
+    // 检查文件大小是否超过限制
+    return fileSize > MAX_FILE_SIZE;
 }
 
-void sd_card::write_log(const char *log_message)
+bool SDCard::writeFile(const std::string &filename, const std::vector<uint8_t> &data)
 {
-    if (log_file != NULL)
+    FILE *file = fopen(filename.c_str(), "ab"); // 以二进制追加模式打开文件
+    if (!file)
     {
-        fprintf(log_file, "%s\n", log_message);
-        fflush(log_file); // Ensure data is written to the file
-    }
-}
-
-void sd_card::close_log_file()
-{
-    if (log_file != NULL)
-    {
-        fclose(log_file);
-        log_file = NULL;
-    }
-}
-
-// sd_card.cpp
-bool sd_card::open_user_data_file(const char *user_data_filename)
-{
-    user_data_file = fopen(user_data_filename, "a");
-    if (user_data_file == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to open user data file");
+        // 文件打开失败，可能是路径错误或文件系统未挂载
         return false;
     }
-    return true;
+
+    // 写入数据
+    size_t bytesWritten = fwrite(data.data(), sizeof(uint8_t), data.size(), file);
+    fclose(file); // 关闭文件
+
+    // 检查是否成功写入所有数据
+    return bytesWritten == data.size();
 }
 
-void sd_card::write_user_data(const char *data)
-{
-    if (user_data_file != NULL)
-    {
-        fprintf(user_data_file, "%s\n", data);
-        fflush(user_data_file); // Ensure data is written to the file
-    }
-}
-
-void sd_card::close_user_data_file()
-{
-    if (user_data_file != NULL)
-    {
-        fclose(user_data_file);
-        user_data_file = NULL;
-    }
-}
-
-void sd_card::read_log_to_serial(const char *log_filename)
-{
-    FILE *file = fopen(log_filename, "r");
-    if (file == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to open log file for reading");
-        return;
-    }
-
-    char buffer[128];
-    while (fgets(buffer, sizeof(buffer), file) != NULL)
-    {
-        printf("%s", buffer); // Output to serial
-    }
-
-    fclose(file);
-}
-
-void sd_card::read_user_data_to_serial(const char *user_data_filename)
+void SDCard::read_user_data_to_serial(const char *user_data_filename)
 {
     FILE *file = fopen(user_data_filename, "r");
     if (file == NULL)
@@ -277,7 +234,40 @@ void sd_card::read_user_data_to_serial(const char *user_data_filename)
     fclose(file);
 }
 
-bool sd_card::write_json_to_file(const char *filename, cJSON *json)
+std::vector<std::string> SDCard::getFileList(const std::string &directory)
+{
+    std::vector<std::string> fileList;
+
+    // 打开目录
+    DIR *dir = opendir(directory.c_str());
+    if (!dir)
+    {
+        // 目录打开失败，可能是路径错误或文件系统未挂载
+        perror("Failed to open directory");
+        return fileList;
+    }
+
+    // 遍历目录中的每个条目
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr)
+    {
+        // 忽略 "." 和 ".." 目录
+        if (entry->d_name[0] == '.')
+        {
+            continue;
+        }
+
+        // 将文件名添加到列表中
+        fileList.push_back(entry->d_name);
+    }
+
+    // 关闭目录
+    closedir(dir);
+
+    return fileList;
+}
+
+bool SDCard::write_json_to_file(const char *filename, cJSON *json)
 {
     if (!json)
     {
@@ -295,7 +285,7 @@ bool sd_card::write_json_to_file(const char *filename, cJSON *json)
 
     // 使用 .txt 写入
     char json_filepath[128];
-    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mount_point, filename);
+    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mt.c_str(), filename);
     ESP_LOGI(TAG, "Writing JSON to: [%s]", json_filepath);
 
     FILE *file = fopen(json_filepath, "w");
@@ -314,11 +304,11 @@ bool sd_card::write_json_to_file(const char *filename, cJSON *json)
 }
 
 // 从文件读取 JSON 数据
-cJSON *sd_card::read_json_from_file(const char *filename)
+cJSON *SDCard::read_json_from_file(const char *filename)
 {
     // 读取 JSON 文件路径
     char json_filepath[128];
-    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mount_point, filename);
+    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mt.c_str(), filename);
     ESP_LOGI(TAG, "Reading JSON from: [%s]", json_filepath);
 
     // 打开文件

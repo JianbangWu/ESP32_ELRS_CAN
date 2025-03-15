@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <time.h>
+#include <iostream>
+
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,51 +19,38 @@
 #include "ds3231m.hpp"
 #include "sd_card.hpp"
 #include "beep.hpp"
+#include "uart_redirect.hpp"
 
-ds3231m *ds3231_obj = nullptr;
-sd_card *sd_obj = nullptr;
+RTC *ds3231_obj = nullptr;
+SDCard *sd_obj = nullptr;
 elrs *elrs_obj = nullptr;
 Buzzer *buzzer_obj = nullptr;
 
 extern "C" void app_main(void)
 {
 
-    ds3231_obj = new ds3231m();
-    sd_obj = new sd_card();
-    elrs_obj = new elrs();
+    ds3231_obj = new RTC();
+    sd_obj = new SDCard();
+    // elrs_obj = new elrs();
     buzzer_obj = new Buzzer();
 
-    // 创建一个 JSON 对象
-    cJSON *json = cJSON_CreateObject();
-    cJSON_AddStringToObject(json, "name", "John Doe");
-    cJSON_AddNumberToObject(json, "age", 30);
-    cJSON_AddBoolToObject(json, "is_student", false);
+    // 重定向 std::cout 到 USB Serial/JTAG
+    redirectStdoutToUsbSerial();
 
-    // 写入 JSON 数据到文件
-    const char *filename = "data.json";
-    if (sd_obj->write_json_to_file(filename, json))
-    {
-        printf("JSON data written to file: %s\n", filename);
-    }
-    else
-    {
-        printf("Failed to write JSON data to file.\n");
-    }
+    // std::string directory = "/sdcard"; // SD 卡挂载的根目录
 
-    // 释放 JSON 对象
-    cJSON_Delete(json);
+    // std::cout << "TimeStamp: " << ds3231_obj->getTimestamp() << std::endl;
 
-    // 从文件读取 JSON 数据
-    cJSON *read_json = sd_obj->read_json_from_file(filename);
-    if (read_json)
-    {
-        printf("JSON data read from file:\n%s\n", cJSON_Print(read_json));
-        cJSON_Delete(read_json); // 释放读取的 JSON 对象
-    }
-    else
-    {
-        printf("Failed to read JSON data from file.\n");
-    }
+    // // 获取文件列表
+    // std::vector<std::string> fileList = SDCard::getFileList(directory);
+
+    // // 打印文件列表
+    // std::cout << "Files in " << directory << ":" << std::endl;
+
+    // for (const std::string &file : fileList)
+    // {
+    //     std::cout << file << std::endl;
+    // }
 
     while (1)
     {

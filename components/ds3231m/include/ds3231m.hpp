@@ -1,25 +1,32 @@
 #pragma once
 
+#include <string.h>
+#include <string>
+
+#include <stdio.h>
+#include <ctime>
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-#include <string.h>
-#include <stdio.h>
-#include <time.h>
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 
-    class ds3231m
+    class RTC
     {
     private:
         const char *TAG = "DS3231M";
 
+        const gpio_num_t rst_io_pin = GPIO_NUM_8;
+        const gpio_num_t int_io_pin = GPIO_NUM_18;
+        const gpio_num_t clock_out_pin = GPIO_NUM_17;
+
         i2c_master_bus_config_t i2c_bus_config = {
             .i2c_port = -1,
-            .sda_io_num = (gpio_num_t)CONFIG_PIN_SDA,
-            .scl_io_num = (gpio_num_t)CONFIG_PIN_SCL,
+            .sda_io_num = GPIO_NUM_15,
+            .scl_io_num = GPIO_NUM_16,
             .clk_source = I2C_CLK_SRC_DEFAULT,
             .glitch_ignore_cnt = 7,
             .intr_priority = 0,
@@ -29,13 +36,13 @@ extern "C"
 
         i2c_device_config_t dev_cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-            .device_address = CONFIG_ADDR_RTC,
+            .device_address = 0x68,
             .scl_speed_hz = 100000,
             .scl_wait_us = 0,
             .flags = {0},
         };
 
-        char buffer[80];
+        static std::string time_stamp;
 
         enum reg : uint16_t
         {
@@ -65,10 +72,6 @@ extern "C"
         struct tm alarm2; /* NO SECONDS */
         float temperature;
 
-        const gpio_num_t rst_io_pin = (gpio_num_t)CONFIG_PIN_RST;
-        const gpio_num_t int_io_pin = (gpio_num_t)CONFIG_PIN_INT;
-        const gpio_num_t clock_out_pin = (gpio_num_t)CONFIG_PIN_RTC_CLK;
-
         struct
         {
             struct
@@ -93,21 +96,25 @@ extern "C"
 
         } ds3231m_config;
 
+        void get_temperature(void);
+        struct tm *get_time(void);
+        void get_config(void);
+        void get_status(void);
+
+        void set_config(void);
+        void set_status(void);
+
     public:
         i2c_master_bus_handle_t bus_handle = nullptr;
         i2c_master_dev_handle_t dev_handle = nullptr;
 
-        ds3231m(/* args */);
-        ~ds3231m();
-        void get_rtc_temperature(void);
-        void get_rtc_time(void);
-        void get_rtc_config(void);
-        void get_rtc_status(void);
-        void set_rtc_config(void);
-        void set_rtc_status(void);
-        void set_rtc_time(tm *new_time);
-        void print_time(void);
+        RTC(/* args */);
+        ~RTC();
+
         void reset(void);
+        void set_time(tm *new_time);
+
+        std::string getTimestamp();
     };
 
 #ifdef __cplusplus
