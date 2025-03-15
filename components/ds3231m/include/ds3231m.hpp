@@ -96,6 +96,8 @@ extern "C"
 
         } ds3231m_config;
 
+        void init_io(void);
+
         void get_temperature(void);
         struct tm *get_time(void);
         void get_config(void);
@@ -103,6 +105,8 @@ extern "C"
 
         void set_config(void);
         void set_status(void);
+
+        void gpio_task(void);
 
     public:
         i2c_master_bus_handle_t bus_handle = nullptr;

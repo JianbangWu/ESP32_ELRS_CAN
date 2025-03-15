@@ -15,7 +15,7 @@ extern "C"
 #include "driver/uart.h"
 #include "freertos/queue.h"
 
-    class elrs
+    class ELRS
     {
     private:
         const uart_config_t uart_config = {
@@ -53,6 +53,8 @@ extern "C"
         void draw_bar(char *buffer, uint16_t value, uint16_t max_value = 2000) const;
         void parse_channels(const uint8_t *data, uint16_t *channels) const;
 
+        void rx_task();
+
     public:
         const int RX_BUF_SIZE = CONFIG_ELRS_UART_RX_BUFF_SIZE;
         const int TX_BUF_SIZE = CONFIG_ELRS_UART_TX_BUFF_SIZE;
@@ -69,8 +71,8 @@ extern "C"
 
         QueueHandle_t elrs_queue = nullptr;
 
-        elrs();
-        ~elrs();
+        ELRS();
+        ~ELRS();
     };
 
 #ifdef __cplusplus

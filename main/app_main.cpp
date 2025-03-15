@@ -23,7 +23,7 @@
 
 RTC *ds3231_obj = nullptr;
 SDCard *sd_obj = nullptr;
-elrs *elrs_obj = nullptr;
+ELRS *elrs_obj = nullptr;
 Buzzer *buzzer_obj = nullptr;
 
 extern "C" void app_main(void)
@@ -31,7 +31,7 @@ extern "C" void app_main(void)
 
     ds3231_obj = new RTC();
     sd_obj = new SDCard();
-    // elrs_obj = new elrs();
+    // elrs_obj = new ELRS();
     buzzer_obj = new Buzzer();
 
     // 重定向 std::cout 到 USB Serial/JTAG

@@ -21,9 +21,8 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     xQueueSendFromISR(sd_evt_queue, &gpio_num, NULL);
 }
 
-static void card_detect(void *arg)
+void SDCard::card_detect(void)
 {
-    class SDCard *phandle = (class SDCard *)arg;
     gpio_num_t io_num;
     for (;;)
     {
@@ -36,13 +35,13 @@ static void card_detect(void *arg)
                 vTaskDelay(pdMS_TO_TICKS(30));
                 buzzer_obj->Beep(4000, 70);
                 printf("SD Card is Plug-In! \r\n");
-                phandle->mount_sd();
+                mount_sd();
             }
             else
             {
                 buzzer_obj->Beep(4000, 100);
                 printf("SD Card is Plug-Out! \r\n");
-                phandle->unmount_sd();
+                unmount_sd();
             }
         }
     }
@@ -61,7 +60,7 @@ SDCard::SDCard(/* args */)
     gpio_config(&io_conf);
     sd_evt_queue = xQueueCreate(1, sizeof(uint32_t));
 
-    xTaskCreate(card_detect, "sd_int", 1024 * 5, this, 10, NULL);
+    xTaskCreate(TaskForwarder, "sd_int", 1024 * 5, this, 10, NULL);
 
     esp_err_t ret = gpio_install_isr_service(0);
 

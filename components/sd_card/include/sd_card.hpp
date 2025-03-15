@@ -37,8 +37,15 @@ extern "C"
 
         sdmmc_host_t host = SDMMC_HOST_DEFAULT();
         sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-
         sdmmc_card_t *card;
+
+        void card_detect(void);
+
+        static void TaskForwarder(void *param)
+        {
+            SDCard *instance = (SDCard *)param;
+            instance->card_detect();
+        }
 
 #ifdef CONFIG_ENABLE_DETECT_FEATURE
         const gpio_num_t detect_pin = (gpio_num_t)CONFIG_PIN_DET;

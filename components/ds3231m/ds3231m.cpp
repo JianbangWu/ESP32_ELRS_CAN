@@ -15,7 +15,7 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
-static void gpio_task(void *arg)
+void RTC::gpio_task(void)
 {
     gpio_num_t io_num;
     for (;;)
@@ -31,7 +31,18 @@ RTC::RTC()
 {
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config, &bus_handle));
     ESP_ERROR_CHECK(i2c_master_bus_add_device((bus_handle), &(dev_cfg), &(dev_handle)));
+    init_io();
+}
 
+RTC::~RTC()
+{
+    ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev_handle));
+    ESP_ERROR_CHECK(i2c_del_master_bus(bus_handle));
+    printf("I2C Bus Is Free! \r\n");
+}
+
+void RTC::init_io(void)
+{
     /* IO */
     gpio_config_t io_conf = {};
     /* RST_PIN */
@@ -50,24 +61,23 @@ RTC::RTC()
 
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
 
-    xTaskCreate(gpio_task, "rtc_int", 2048, NULL, 10, NULL);
+    auto task_func = [](void *arg)
+    {
+        RTC *instance = static_cast<RTC *>(arg);
+        instance->gpio_task(); // 调用类的成员函数
+    };
+
+    xTaskCreate(task_func, "rtc_int", 2048, NULL, 10, NULL);
 
     esp_err_t ret = gpio_install_isr_service(0);
 
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE)
     {
-        printf("ISR install fail\n");
+        ESP_LOGE(TAG, "ISR install fail");
         return;
     }
-
     gpio_isr_handler_add(int_io_pin, gpio_isr_handler, (void *)int_io_pin);
-}
-
-RTC::~RTC()
-{
-    ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev_handle));
-    ESP_ERROR_CHECK(i2c_del_master_bus(bus_handle));
-    printf("I2C Bus Is Free! \r\n");
+    ESP_LOGI(TAG, "ISR install Success");
 }
 
 /* GET */
