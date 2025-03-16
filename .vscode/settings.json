@@ -96,6 +96,8 @@
         "cerrno": "cpp",
         "esp_log_color.h": "c",
         "stdarg.h": "c",
-        "esp_log_buffer.h": "c"
+        "esp_log_buffer.h": "c",
+        "filesystem": "cpp",
+        "codecvt": "cpp"
     }
 }

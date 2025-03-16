@@ -1,4 +1,4 @@
 idf_component_register(SRCS "sd_card.cpp"
-                    REQUIRES fatfs sdmmc driver json ds3231m
+                    REQUIRES fatfs sdmmc driver json ds3231m console 
                     PRIV_REQUIRES beep 
                     INCLUDE_DIRS "include")

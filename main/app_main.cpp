@@ -38,24 +38,6 @@ extern "C" void app_main(void)
     buzzer_obj = new Buzzer();
     console_obj = new USER_CONSOLE();
 
-    // 重定向 std::cout 到 USB Serial/JTAG
-    // redirectStdoutToUsbSerial();
-
-    // std::string directory = "/sdcard"; // SD 卡挂载的根目录
-
-    // std::cout << "TimeStamp: " << ds3231_obj->getTimestamp() << std::endl;
-
-    // // 获取文件列表
-    // std::vector<std::string> fileList = SDCard::getFileList(directory);
-
-    // // 打印文件列表
-    // std::cout << "Files in " << directory << ":" << std::endl;
-
-    // for (const std::string &file : fileList)
-    // {
-    //     std::cout << file << std::endl;
-    // }
-
     while (1)
     {
         vTaskDelay(pdMS_TO_TICKS(1000));

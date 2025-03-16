@@ -20,6 +20,7 @@ extern "C"
     private:
         const char *TAG = "SDCard";
         static const size_t MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
         const std::string mt{"/sdcard"};
 
         /* Init Parameter */
@@ -59,12 +60,9 @@ extern "C"
         void format_sd(void);
 
         static bool isFileSizeExceeded(std::string filename);
-
         static bool writeFile(const std::string &filename, const std::vector<uint8_t> &data);
 
         void read_user_data_to_serial(const char *user_data_filename);
-
-        static std::vector<std::string> getFileList(void);
 
         static std::vector<std::string> getFileList(const std::string &directory);
 
