@@ -9,7 +9,7 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 
-void ELRS::rx_task()
+void ELRS::rx_task(void)
 {
     std::vector<uint8_t> buffer;
 
@@ -68,7 +68,7 @@ ELRS::ELRS(/* args */)
         instance->rx_task(); // 调用类的成员函数
     };
 
-    xTaskCreatePinnedToCore(task_func, "elrs_rx_task", 1024 * 20, nullptr, configMAX_PRIORITIES - 1, nullptr, 1);
+    xTaskCreatePinnedToCore(task_func, "elrs_rx_task", 1024 * 20, this, configMAX_PRIORITIES - 1, nullptr, 1);
 }
 
 ELRS::~ELRS()

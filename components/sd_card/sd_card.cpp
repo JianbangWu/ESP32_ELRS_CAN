@@ -34,13 +34,13 @@ void SDCard::card_detect(void)
                 buzzer_obj->Beep(4000, 70);
                 vTaskDelay(pdMS_TO_TICKS(30));
                 buzzer_obj->Beep(4000, 70);
-                printf("SD Card is Plug-In! \r\n");
+                ESP_LOGI(TAG, "SD Card is Plug-In!");
                 mount_sd();
             }
             else
             {
                 buzzer_obj->Beep(4000, 100);
-                printf("SD Card is Plug-Out! \r\n");
+                ESP_LOGI(TAG, "SD Card is Plug-Out!");
                 unmount_sd();
             }
         }

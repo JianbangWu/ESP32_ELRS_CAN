@@ -93,6 +93,9 @@
         "esp_sntp.h": "c",
         "esp_netif_sntp.h": "c",
         "protocol_examples_common.h": "c",
-        "cerrno": "cpp"
+        "cerrno": "cpp",
+        "esp_log_color.h": "c",
+        "stdarg.h": "c",
+        "esp_log_buffer.h": "c"
     }
 }

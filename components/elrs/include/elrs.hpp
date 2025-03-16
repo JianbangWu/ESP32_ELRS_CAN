@@ -45,7 +45,7 @@ extern "C"
 
         double fps = 0;
         int frame_count = 0;
-        static std::array<uint16_t, 16> channels;
+        std::array<uint16_t, 16> channels;
 
         std::array<uint8_t, 256> generate_crc_lut()
         {
@@ -67,13 +67,13 @@ extern "C"
         bool check_crc(const uint8_t *data, size_t len) const;
         void process_packet(const uint8_t *data, std::time_t &last_time);
         void update_frame_rate(std::time_t &last_time);
-        void rx_task();
+        void rx_task(void);
 
     public:
         ELRS();
         ~ELRS();
 
-        const std::array<uint16_t, 16> &get_channels(void)
+        std::array<uint16_t, 16> &get_channels(void)
         {
             return channels;
         }

@@ -20,11 +20,14 @@
 #include "sd_card.hpp"
 #include "beep.hpp"
 #include "uart_redirect.hpp"
+#include "user_console.hpp"
 
 RTC *ds3231_obj = nullptr;
 SDCard *sd_obj = nullptr;
 ELRS *elrs_obj = nullptr;
 Buzzer *buzzer_obj = nullptr;
+
+USER_CONSOLE *console_obj = nullptr;
 
 extern "C" void app_main(void)
 {
@@ -33,9 +36,10 @@ extern "C" void app_main(void)
     sd_obj = new SDCard();
     // elrs_obj = new ELRS();
     buzzer_obj = new Buzzer();
+    console_obj = new USER_CONSOLE();
 
     // 重定向 std::cout 到 USB Serial/JTAG
-    redirectStdoutToUsbSerial();
+    // redirectStdoutToUsbSerial();
 
     // std::string directory = "/sdcard"; // SD 卡挂载的根目录
 
