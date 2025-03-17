@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <cstring>
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -22,7 +24,7 @@ void RTC::gpio_task(void)
     {
         if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY))
         {
-            printf("GPIO[%" PRIu32 "] intr, val: %d\n", (long unsigned int)io_num, gpio_get_level(io_num));
+            ESP_LOGI(TAG, "INT");
         }
     }
 }
@@ -111,7 +113,7 @@ void RTC::get_config(void)
     uint8_t temp_buff = 0x00;
 
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &temp_add, 1, &temp_buff, sizeof(temp_buff), -1));
-    memcpy(&ds3231m_config.control, &temp_buff, sizeof(temp_buff));
+    std::memcpy(&reg.control, &temp_buff, sizeof(temp_buff));
 }
 
 void RTC::get_status(void)
@@ -120,7 +122,7 @@ void RTC::get_status(void)
     uint8_t temp_buff = 0x00;
 
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &temp_add, 1, &temp_buff, sizeof(temp_buff), -1));
-    memcpy(&ds3231m_config.status, &temp_buff, sizeof(temp_buff));
+    std::memcpy(&reg.status, &temp_buff, sizeof(temp_buff));
 }
 
 /* SET */
@@ -128,14 +130,14 @@ void RTC::set_config(void)
 {
     uint8_t temp_add = REG_CONTROL;
     ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, &temp_add, 1, -1));
-    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, (uint8_t *)&ds3231m_config.control, sizeof(ds3231m_config.control), -1));
+    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, (uint8_t *)&reg.control, sizeof(reg.control), -1));
 }
 
 void RTC::set_status(void)
 {
     uint8_t temp_add = REG_STATUS;
     ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, &temp_add, 1, -1));
-    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, (uint8_t *)&ds3231m_config.status, sizeof(ds3231m_config.status), -1));
+    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, (uint8_t *)&reg.status, sizeof(reg.status), -1));
 }
 
 void RTC::set_time(tm *new_time)

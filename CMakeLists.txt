@@ -4,3 +4,4 @@ cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(ELRS_CAN_RTC)
+# idf_build_set_property(COMPILE_OPTIONS "-Werror" APPEND)

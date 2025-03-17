@@ -98,6 +98,8 @@
         "stdarg.h": "c",
         "esp_log_buffer.h": "c",
         "filesystem": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "user_console.hpp": "c",
+        "reent.h": "c"
     }
 }

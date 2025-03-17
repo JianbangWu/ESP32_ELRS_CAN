@@ -3,14 +3,14 @@
 #include <string>
 #include <string_view>
 #include <filesystem>
-#include "esp_vfs_fat.h"
-#include "esp_console.h"
-#include "esp_log.h"
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+#include "esp_vfs_fat.h"
+#include "esp_console.h"
+#include "esp_log.h"
 
     class USER_CONSOLE
     {
@@ -57,7 +57,7 @@ extern "C"
         void set_path(std::string_view path);
     };
 
-    void register_commands(USER_CONSOLE *console);
+    void register_commands(void);
 
 #ifdef __cplusplus
 }

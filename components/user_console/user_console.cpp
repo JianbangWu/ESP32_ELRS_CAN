@@ -123,8 +123,8 @@ void USER_CONSOLE::initialize_console_library(std::string_view history_path)
 
 void USER_CONSOLE::update_prompt(void)
 {
-    std::string dynamic_prompt = device_name + device_state + ":" + current_dir + ">";
-    snprintf(prompt, CONSOLE_PROMPT_MAX_LEN - 1, LOG_COLOR_I "%s " LOG_RESET_COLOR, dynamic_prompt.c_str());
+    snprintf(prompt, CONSOLE_PROMPT_MAX_LEN - 1,
+             LOG_COLOR_I "%s " LOG_COLOR_V "%s" LOG_RESET_COLOR ":%s>", device_name.c_str(), device_state.c_str(), current_dir.c_str());
 }
 
 USER_CONSOLE::USER_CONSOLE()
@@ -171,7 +171,7 @@ USER_CONSOLE::USER_CONSOLE()
         instance->task();
     };
 
-    register_commands(this);
+    register_commands();
     xTaskCreatePinnedToCore(task_func, "console", 1024 * 32, this, configMAX_PRIORITIES - 1, nullptr, 1);
 }
 

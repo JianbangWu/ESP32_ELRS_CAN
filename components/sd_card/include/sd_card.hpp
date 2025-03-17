@@ -2,11 +2,6 @@
 
 #include <string>
 #include <vector>
-#include "dirent.h"
-#include "sdmmc_cmd.h"
-#include "esp_vfs_fat.h"
-#include "driver/sdmmc_host.h"
-#include "cJSON.h"
 
 #include "ds3231m.hpp"
 
@@ -14,6 +9,12 @@
 extern "C"
 {
 #endif
+
+#include "dirent.h"
+#include "sdmmc_cmd.h"
+#include "esp_vfs_fat.h"
+#include "driver/sdmmc_host.h"
+#include "cJSON.h"
 
     class SDCard
     {

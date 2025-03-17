@@ -1,8 +1,6 @@
 #pragma once
 
-#include <string.h>
 #include <string>
-
 #include <stdio.h>
 #include <ctime>
 
@@ -94,7 +92,7 @@ extern "C"
                 uint8_t oscillator_is_stop : 1;
             } status;
 
-        } ds3231m_config;
+        } reg;
 
         void init_io(void);
 
