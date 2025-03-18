@@ -100,6 +100,8 @@
         "filesystem": "cpp",
         "codecvt": "cpp",
         "user_console.hpp": "c",
-        "reent.h": "c"
+        "reent.h": "c",
+        "esp_err.h": "c",
+        "twai_types.h": "c"
     }
 }

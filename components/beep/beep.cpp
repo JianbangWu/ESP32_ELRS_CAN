@@ -7,79 +7,8 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
-static const char *kTag = "buzzer";
-
-static const uint32_t kQueueSize = 10;
-static const uint32_t kStackSize = 2048;
-
-void Buzzer::Stop()
-{
-    BaseType_t err = ledc_set_duty(speed_mode_, channel_, 0);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(kTag, "Failed to set duty cycle to zero");
-    }
-    err = ledc_update_duty(speed_mode_, channel_);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(kTag, "Failed to update duty cycle");
-    }
-    err = ledc_stop(speed_mode_, channel_, idle_level_);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(kTag, "Failed to stop buzzer");
-    }
-}
-
-void Buzzer::Start(uint32_t frequency)
-{
-    uint32_t duty = (1 << timer_bit_) / 2;
-
-    esp_err_t err = ledc_set_duty(speed_mode_, channel_, duty);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(kTag, "Failed to set duty cycle");
-        return;
-    }
-    err = ledc_update_duty(speed_mode_, channel_);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(kTag, "Failed to update duty cycle");
-        return;
-    }
-    err = ledc_set_freq(speed_mode_, timer_num_, frequency);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(kTag, "Failed to set frequency");
-        return;
-    }
-}
-
-void Buzzer::Task()
-{
-    message_t message;
-    TickType_t waitTime = portMAX_DELAY;
-
-    while (1)
-    {
-        BaseType_t res = xQueueReceive(queue_handle_, &message, waitTime);
-        if (res != pdPASS)
-        {
-            ESP_LOGD(kTag, "No new message, Stop beeping");
-            Stop();
-            waitTime = portMAX_DELAY;
-        }
-        else
-        {
-            ESP_LOGD(kTag,
-                     "Beep at %" PRIu32 " Hz for %" PRIu32 " ms",
-                     message.frequency,
-                     message.duration_ms);
-            Start(message.frequency);
-            waitTime = pdMS_TO_TICKS(message.duration_ms);
-        }
-    }
-}
+static const uint32_t QueueSize = 10;
+static const uint32_t StackSize = 1024 * 2;
 
 Buzzer::Buzzer(const gpio_num_t gpio_num,
                ledc_clk_cfg_t clk_cfg,
@@ -114,11 +43,87 @@ Buzzer::Buzzer(const gpio_num_t gpio_num,
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
     ESP_ERROR_CHECK(ledc_stop(speed_mode_, channel_, idle_level_));
 
-    queue_handle_ = xQueueCreate(kQueueSize, sizeof(message_t));
+    queue_handle_ = xQueueCreate(QueueSize, sizeof(uint8_t));
+
+    auto task_func = [](void *arg)
+    {
+        Buzzer *instance = static_cast<Buzzer *>(arg);
+        instance->Task(); // 调用类的成员函数
+    };
+
     BaseType_t res = xTaskCreate(
-        TaskForwarder, "buzzer_task", kStackSize, this, uxTaskPriorityGet(nullptr), &task_handle_);
+        task_func, "buzzer_task", StackSize, this, uxTaskPriorityGet(nullptr), &task_handle_);
 
     assert(res == pdPASS);
+}
+
+void Buzzer::Stop()
+{
+    BaseType_t err = ledc_set_duty(speed_mode_, channel_, 0);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(Tag, "Failed to set duty cycle to zero");
+    }
+    err = ledc_update_duty(speed_mode_, channel_);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(Tag, "Failed to update duty cycle");
+    }
+    err = ledc_stop(speed_mode_, channel_, idle_level_);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(Tag, "Failed to stop buzzer");
+    }
+}
+
+void Buzzer::Start(uint32_t frequency)
+{
+    uint32_t duty = (1 << timer_bit_) / 2;
+
+    esp_err_t err = ledc_set_duty(speed_mode_, channel_, duty);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(Tag, "Failed to set duty cycle");
+        return;
+    }
+    err = ledc_update_duty(speed_mode_, channel_);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(Tag, "Failed to update duty cycle");
+        return;
+    }
+    err = ledc_set_freq(speed_mode_, timer_num_, frequency);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(Tag, "Failed to set frequency");
+        return;
+    }
+}
+
+void Buzzer::Task()
+{
+    struct BeeperMessage message;
+    TickType_t waitTime = portMAX_DELAY;
+
+    while (1)
+    {
+        BaseType_t res = xQueueReceive(queue_handle_, &message, waitTime);
+        if (res != pdPASS)
+        {
+            ESP_LOGD(Tag, "No new message, Stop beeping");
+            Stop();
+            waitTime = portMAX_DELAY;
+        }
+        else
+        {
+            ESP_LOGD(Tag,
+                     "Beep at %" PRIu32 " Hz for %" PRIu32 " ms",
+                     message.frequency,
+                     message.duration);
+            Start(message.frequency);
+            waitTime = pdMS_TO_TICKS(message.duration);
+        }
+    }
 }
 
 Buzzer::~Buzzer()
@@ -129,9 +134,14 @@ Buzzer::~Buzzer()
 
 BaseType_t Buzzer::Beep(uint32_t frequency, uint32_t duration_ms)
 {
-    message_t message = {
+    struct BeeperMessage message = {
         .frequency = frequency,
-        .duration_ms = duration_ms,
+        .duration = duration_ms,
     };
     return xQueueSend(queue_handle_, &message, 0);
+}
+
+QueueHandle_t &Buzzer::get_beep_handle(void)
+{
+    return queue_handle_;
 }

@@ -1,45 +1,39 @@
-#include "sd_card.hpp"
-#include "errno.h"
+#include <sys/stat.h>
 #include <stdint.h>
 #include <sys/unistd.h>
-#include <sys/stat.h>
+#include <errno.h>
+
+#include "sd_card.hpp"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
+
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/task.h"
 
-static QueueHandle_t sd_evt_queue = NULL;
-#include "beep.hpp"
+static const uint32_t StackSize = 1024 * 5;
 
-extern Buzzer *buzzer_obj;
-
-static void IRAM_ATTR gpio_isr_handler(void *arg)
+void IRAM_ATTR SDCard::gpio_isr_handler(void *arg)
 {
-    uint32_t gpio_num = (uint32_t)arg;
-    xQueueSendFromISR(sd_evt_queue, &gpio_num, NULL);
+    SDCard *instance = static_cast<SDCard *>(arg);
+    xQueueSendFromISR(instance->sd_evt_queue, &instance->_det_pin, NULL);
 }
 
-void SDCard::card_detect(void)
+void SDCard::card_detect()
 {
     gpio_num_t io_num;
-    for (;;)
+    while (1)
     {
-        if (xQueueReceive(sd_evt_queue, &io_num, portMAX_DELAY))
+        if (xQueueReceive(sd_evt_queue, &io_num, pdMS_TO_TICKS(20)))
         {
-            vTaskDelay(pdMS_TO_TICKS(10));
             if (gpio_get_level(io_num) == 1)
             {
-                buzzer_obj->Beep(4000, 70);
-                vTaskDelay(pdMS_TO_TICKS(30));
-                buzzer_obj->Beep(4000, 70);
                 ESP_LOGI(TAG, "SD Card is Plug-In!");
                 mount_sd();
             }
             else
             {
-                buzzer_obj->Beep(4000, 100);
                 ESP_LOGI(TAG, "SD Card is Plug-Out!");
                 unmount_sd();
             }
@@ -47,20 +41,32 @@ void SDCard::card_detect(void)
     }
 }
 
-SDCard::SDCard(/* args */)
+SDCard::SDCard(gpio_num_t clk_pin,
+               gpio_num_t cmd_pin,
+               gpio_num_t d0_pin,
+               gpio_num_t d1_pin,
+               gpio_num_t d2_pin,
+               gpio_num_t d3_pin,
+               gpio_num_t det_pin) : _clk_pin(clk_pin), _cmd_pin(cmd_pin), _d0_pin(d0_pin), _d1_pin(d1_pin), _d2_pin(d2_pin), _d3_pin(d3_pin), _det_pin(det_pin)
 {
-#ifdef CONFIG_ENABLE_DETECT_FEATURE
+
     gpio_config_t io_conf = {};
     /* RST_PIN */
     io_conf.intr_type = GPIO_INTR_ANYEDGE;
     io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = (1ULL << CONFIG_PIN_DET);
+    io_conf.pin_bit_mask = (1ULL << det_pin);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
     sd_evt_queue = xQueueCreate(1, sizeof(uint32_t));
 
-    xTaskCreate(TaskForwarder, "sd_int", 1024 * 5, this, 10, NULL);
+    auto task_func = [](void *arg)
+    {
+        SDCard *instance = static_cast<SDCard *>(arg);
+        instance->card_detect(); // 调用类的成员函数
+    };
+
+    xTaskCreate(task_func, "sd_isr", StackSize, this, 10, NULL);
 
     esp_err_t ret = gpio_install_isr_service(0);
 
@@ -69,51 +75,29 @@ SDCard::SDCard(/* args */)
         ESP_LOGE(TAG, "Detect Pin ISR Init Failed! 0x%x", ret);
         return;
     }
-    gpio_isr_handler_add((gpio_num_t)CONFIG_PIN_DET, gpio_isr_handler, (void *)CONFIG_PIN_DET);
-#endif
+
+    if (ESP_OK == (gpio_isr_handler_add(det_pin, gpio_isr_handler, this)))
+    {
+        ESP_LOGI(TAG, "ISR install Success");
+    }
 
     ESP_LOGI(TAG, "Initializing SD card");
     ESP_LOGI(TAG, "Using SDMMC peripheral");
 
-#if CONFIG_SDMMC_SPEED_HS
     host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
-#elif CONFIG_SDMMC_SPEED_UHS_I_SDR50
-    host.slot = SDMMC_HOST_SLOT_0;
-    host.max_freq_khz = SDMMC_FREQ_SDR50;
-    host.flags &= ~SDMMC_HOST_FLAG_DDR;
-#elif CONFIG_SDMMC_SPEED_UHS_I_DDR50
-    host.slot = SDMMC_HOST_SLOT_0;
-    host.max_freq_khz = SDMMC_FREQ_DDR50;
-#endif
-
-#if IS_UHS1
-    slot_config.flags |= SDMMC_SLOT_FLAG_UHS1;
-#endif
-
-#ifdef CONFIG_SDMMC_BUS_WIDTH_4
     slot_config.width = 4;
-#else
-    slot_config.width = 1;
-#endif
 
-#ifdef CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
-    slot_config.clk = (gpio_num_t)CONFIG_PIN_CLK;
-    slot_config.cmd = (gpio_num_t)CONFIG_PIN_CMD;
-    slot_config.d0 = (gpio_num_t)CONFIG_PIN_D0;
-#ifdef CONFIG_SDMMC_BUS_WIDTH_4
-    slot_config.d1 = (gpio_num_t)CONFIG_PIN_D1;
-    slot_config.d2 = (gpio_num_t)CONFIG_PIN_D2;
-    slot_config.d3 = (gpio_num_t)CONFIG_PIN_D3;
-#endif // CONFIG_SDMMC_BUS_WIDTH_4
-#endif // CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
+    slot_config.clk = clk_pin;
+    slot_config.cmd = cmd_pin;
+    slot_config.d0 = d0_pin;
 
-    // Enable internal pullups on enabled pins. The internal pullups
-    // are insufficient however, please make sure 10k external pullups are
-    // connected on the bus. This is for debug / example purpose only.
+    slot_config.d1 = d1_pin;
+    slot_config.d2 = d2_pin;
+    slot_config.d3 = d3_pin;
+
     slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
-#ifdef CONFIG_ENABLE_DETECT_FEATURE
-    if (gpio_get_level((gpio_num_t)CONFIG_PIN_DET) == 1)
+    if (gpio_get_level(det_pin) == 1)
     {
         ESP_LOGI(TAG, "SD-Card Detected!");
     }
@@ -122,14 +106,12 @@ SDCard::SDCard(/* args */)
         ESP_LOGI(TAG, "No SD-Card Detected!");
         return;
     }
-#endif
     mount_sd();
 }
 
 SDCard::~SDCard()
 {
-    esp_vfs_fat_sdcard_unmount(mt.c_str(), card);
-    ESP_LOGI(TAG, "Card unmounted");
+    unmount_sd();
 }
 
 void SDCard::mount_sd(void)
@@ -185,7 +167,6 @@ bool SDCard::isFileSizeExceeded(std::string filename)
     FILE *file = fopen(filename.c_str(), "rb"); // 以二进制只读模式打开文件
     if (!file)
     {
-        // 文件不存在，未超过大小限制
         return false;
     }
 

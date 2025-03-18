@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <cstring>
+#include <time.h>
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -9,31 +10,81 @@
 #include "driver/gpio.h"
 #include "ds3231m.hpp"
 
-static QueueHandle_t gpio_evt_queue = NULL;
+static const uint32_t StackSize = 1024 * 7;
 
-static void IRAM_ATTR gpio_isr_handler(void *arg)
+void IRAM_ATTR RTC::gpio_isr_handler(void *arg)
 {
-    uint32_t gpio_num = (uint32_t)arg;
-    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+    RTC *instance = static_cast<RTC *>(arg);
+    xQueueSendFromISR(instance->isr_event, &instance->int_io_pin, NULL);
 }
 
-void RTC::gpio_task(void)
+void RTC::task(void)
 {
     gpio_num_t io_num;
-    for (;;)
+    uint8_t ntp_finished;
+    while (1)
     {
-        if (xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY))
+        if (xQueueReceive(isr_event, &io_num, pdMS_TO_TICKS(10)))
         {
-            ESP_LOGI(TAG, "INT");
+            ESP_LOGI(TAG, "INT Task");
+        }
+        if (xQueueReceive(rtc_handle, &ntp_finished, pdMS_TO_TICKS(10)))
+        {
+            time_t now{0};
+            struct tm timeinfo{0};
+            time(&now);
+            localtime_r(&now, &timeinfo);
+            set_time(&timeinfo);
         }
     }
 }
 
-RTC::RTC()
+RTC::RTC(QueueHandle_t &rtc_handle,
+         gpio_num_t rst_pin,
+         gpio_num_t init_pin,
+         gpio_num_t clock_out_pin,
+         gpio_num_t sda_pin,
+         gpio_num_t scl_pin,
+         uint16_t dev_addr) : rtc_handle(rtc_handle),
+                              rst_io_pin(rst_pin),
+                              int_io_pin(init_pin),
+                              clock_out_pin(clock_out_pin)
+
 {
+    if (rtc_handle == nullptr)
+    {
+        ESP_LOGE(TAG, "Invalid queue handle provided");
+        return; // 或者抛出异常
+    }
+
+    i2c_master_bus_config_t i2c_bus_config = {
+        .i2c_port = -1,
+        .sda_io_num = sda_pin,
+        .scl_io_num = scl_pin,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .intr_priority = 0,
+        .trans_queue_depth = 0,
+        .flags = {0, 0},
+    };
+
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev_addr,
+        .scl_speed_hz = 100000,
+        .scl_wait_us = 0,
+        .flags = {0},
+    };
+
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config, &bus_handle));
     ESP_ERROR_CHECK(i2c_master_bus_add_device((bus_handle), &(dev_cfg), &(dev_handle)));
     init_io();
+    get_config();
+    if (reg.status.oscillator_is_stop == 1)
+    {
+        ESP_LOGE(TAG, "RTC BAT Was Error!");
+        ESP_LOGE(TAG, "Time Need Calibrate!");
+    }
 }
 
 RTC::~RTC()
@@ -61,25 +112,28 @@ void RTC::init_io(void)
     io_conf.mode = GPIO_MODE_INPUT;
     gpio_config(&io_conf);
 
-    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    isr_event = xQueueCreate(3, sizeof(uint32_t));
 
     auto task_func = [](void *arg)
     {
         RTC *instance = static_cast<RTC *>(arg);
-        instance->gpio_task(); // 调用类的成员函数
+        instance->task(); // 调用类的成员函数
     };
 
-    xTaskCreate(task_func, "rtc_int", 2048, NULL, 10, NULL);
+    xTaskCreate(task_func, "ds3231m", StackSize, this, 10, NULL);
 
     esp_err_t ret = gpio_install_isr_service(0);
 
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE)
     {
-        ESP_LOGE(TAG, "ISR install fail");
+        ESP_LOGE(TAG, "Detect Pin ISR Init Failed! 0x%x", ret);
         return;
     }
-    gpio_isr_handler_add(int_io_pin, gpio_isr_handler, (void *)int_io_pin);
-    ESP_LOGI(TAG, "ISR install Success");
+
+    if (ESP_OK == (gpio_isr_handler_add(int_io_pin, gpio_isr_handler, this)))
+    {
+        ESP_LOGI(TAG, "ISR install Success");
+    }
 }
 
 /* GET */
@@ -96,15 +150,15 @@ struct tm *RTC::get_time(void)
     uint8_t temp_add = REG_SECONDS;
     uint8_t temp_buff[7] = {0};
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &temp_add, 1, temp_buff, sizeof(temp_buff), -1));
-    time.tm_sec = temp_buff[0];
-    time.tm_min = temp_buff[1];
-    time.tm_hour = temp_buff[2];
-    time.tm_wday = temp_buff[3];
-    time.tm_mday = temp_buff[4];
-    time.tm_mon = temp_buff[5];
-    time.tm_year = temp_buff[6];
+    now_time.tm_sec = temp_buff[0];
+    now_time.tm_min = temp_buff[1];
+    now_time.tm_hour = temp_buff[2];
+    now_time.tm_wday = temp_buff[3];
+    now_time.tm_mday = temp_buff[4];
+    now_time.tm_mon = temp_buff[5];
+    now_time.tm_year = temp_buff[6];
 
-    return &time;
+    return &now_time;
 }
 
 void RTC::get_config(void)
@@ -159,6 +213,8 @@ void RTC::set_time(tm *new_time)
     temp_buff[6] = new_time->tm_year;
 
     ESP_ERROR_CHECK(i2c_master_multi_buffer_transmit(dev_handle, multi_buff, sizeof(multi_buff) / sizeof(i2c_master_transmit_multi_buffer_info_t), -1));
+
+    ESP_LOGI(TAG, "Time Calibrated");
 }
 
 /* USER FUNCTION */

@@ -23,22 +23,21 @@ extern "C"
                uint32_t idle_level = 0);
         virtual ~Buzzer();
         BaseType_t Beep(uint32_t frequency, uint32_t duration_ms);
+        QueueHandle_t &get_beep_handle(void);
 
     private:
-        struct message_t
+        const char *Tag = "Buzzer";
+
+        // 定义蜂鸣器消息类型
+        struct BeeperMessage
         {
-            uint32_t frequency;
-            uint32_t duration_ms;
+            uint32_t frequency; // 频率
+            uint32_t duration;  // 持续时间（周期）
         };
 
         void Stop();
         void Start(uint32_t frequency);
         void Task();
-        static void TaskForwarder(void *param)
-        {
-            Buzzer *buzzer = (Buzzer *)param;
-            buzzer->Task();
-        }
 
         TaskHandle_t task_handle_;
         QueueHandle_t queue_handle_;
