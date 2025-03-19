@@ -18,7 +18,6 @@ static const uint32_t StackSize = 1024 * 5;
 void IRAM_ATTR SDCard::gpio_isr_handler(void *arg)
 {
     SDCard *instance = static_cast<SDCard *>(arg);
-    // xQueueSendFromISR(instance->sd_evt_queue, &instance->_det_pin, NULL);
     xSemaphoreGiveFromISR(instance->det_sem, nullptr);
 }
 

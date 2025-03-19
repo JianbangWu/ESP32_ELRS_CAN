@@ -21,6 +21,11 @@ void USER_CONSOLE::task()
 {
     while (true)
     {
+        if (xSemaphoreTake(_path_change, 0))
+        {
+            update_prompt();
+        }
+
         char *line = linenoise(prompt);
         if (!line)
             continue; // 忽略空行
@@ -75,7 +80,6 @@ void USER_CONSOLE::initialize_nvs()
 
 void USER_CONSOLE::initialize_filesystem()
 {
-
     const esp_vfs_fat_mount_config_t mount_config = {
         .format_if_mount_failed = true,
         .max_files = 4,
@@ -147,8 +151,15 @@ void USER_CONSOLE::update_prompt(void)
              LOG_COLOR_I "%s " LOG_COLOR_V "%s" LOG_RESET_COLOR ":%s>", device_name.c_str(), device_state.c_str(), current_dir.c_str());
 }
 
-USER_CONSOLE::USER_CONSOLE()
+USER_CONSOLE::USER_CONSOLE(SemaphoreHandle_t &path_change, std::string &current_path) : _path_change(path_change), current_dir(current_path)
 {
+
+    if (path_change == nullptr)
+    {
+        ESP_LOGE(TAG, "Invalid queue handle provided");
+        return; // 或者抛出异常
+    }
+
     initialize_nvs();
     initialize_filesystem();
     ESP_LOGI(TAG, "Command history enabled");
@@ -164,8 +175,6 @@ USER_CONSOLE::USER_CONSOLE()
     }
 
     esp_console_register_help_command();
-
-    current_dir = {"/sdcard"};
 
     update_prompt();
 
@@ -187,7 +196,6 @@ USER_CONSOLE::USER_CONSOLE()
         instance->task();
     };
 
-    register_commands();
     xTaskCreatePinnedToCore(task_func, "console", StackSize, this, configMAX_PRIORITIES - 1, nullptr, 1);
 }
 

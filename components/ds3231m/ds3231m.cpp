@@ -33,6 +33,8 @@ void RTC::task(void)
             time(&now);
             localtime_r(&now, &timeinfo);
             set_time(&timeinfo);
+            reg.status.oscillator_is_stop = 0;
+            set_status();
         }
     }
 }

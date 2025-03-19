@@ -17,13 +17,15 @@ extern "C"
     private:
         const char *TAG = "USER_CONSOLE";
 
+        SemaphoreHandle_t &_path_change;
+
         const std::string nvs_mtp = "/data";
 
         const std::string cmd_history_path = "/data/history.txt";
 
         const uint8_t CONSOLE_PROMPT_MAX_LEN = 64;
         char *prompt;
-        std::string current_dir; // 当前工作目录
+        std::string &current_dir; // 当前工作目录
         const std::string device_name{CONFIG_IDF_TARGET};
         std::string device_state{""};
 
@@ -36,14 +38,12 @@ extern "C"
         void update_prompt(void);
 
     public:
-        USER_CONSOLE();
+        USER_CONSOLE(SemaphoreHandle_t &_path_change, std::string &current_path);
         ~USER_CONSOLE();
 
         void set_device_state(std::string_view state);
         void set_path(std::string_view path);
     };
-
-    void register_commands(void);
 
 #ifdef __cplusplus
 }

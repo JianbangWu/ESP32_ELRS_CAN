@@ -20,9 +20,8 @@ extern "C"
         const char *TAG = "SDCard";
 
         SemaphoreHandle_t det_sem;
-        // QueueHandle_t sd_evt_queue;
 
-        static const size_t MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+        static const size_t MAX_FILE_SIZE = 1 * 1024 * 1024; // 10MB
 
         const std::string mt{"/sdcard"};
 
@@ -34,6 +33,10 @@ extern "C"
         const gpio_num_t _d3_pin;
         const gpio_num_t _det_pin;
 
+        static void IRAM_ATTR gpio_isr_handler(void *arg);
+
+        sdmmc_card_t *card;
+
         /* Init Parameter */
         esp_vfs_fat_sdmmc_mount_config_t mount_config = {
             .format_if_mount_failed = false,
@@ -42,18 +45,10 @@ extern "C"
             .disk_status_check_enable = 1,
             .use_one_fat = false,
         };
-
         sdmmc_host_t host = SDMMC_HOST_DEFAULT();
         sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-        sdmmc_card_t *card;
-
-        static void IRAM_ATTR gpio_isr_handler(void *arg);
 
         void card_detect(void);
-
-#ifdef CONFIG_ENABLE_DETECT_FEATURE
-        const gpio_num_t detect_pin = (gpio_num_t)CONFIG_PIN_DET;
-#endif
 
     public:
         SDCard(gpio_num_t clk_pin = GPIO_NUM_13,
@@ -64,6 +59,7 @@ extern "C"
                gpio_num_t d3_pin = GPIO_NUM_21,
                gpio_num_t det_pin = GPIO_NUM_48);
         ~SDCard();
+
         void mount_sd(void);
         void unmount_sd(void);
         void format_sd(void);

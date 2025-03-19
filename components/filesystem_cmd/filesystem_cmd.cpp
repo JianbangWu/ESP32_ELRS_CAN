@@ -1,23 +1,37 @@
+#include "filesystem_cmd.hpp"
 #include <stdio.h>
-#include <cstring>
+#include <string>
+#include <vector>
+#include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <dirent.h>
-#include "esp_console.h"
-#include "linenoise/linenoise.h"
-#include "esp_vfs_fat.h"
-#include "sdmmc_cmd.h"
-#include "user_console.hpp"
-#include "argtable3/argtable3.h"
+#include <cstring>
+#include <algorithm>
+#include <unistd.h>
+
+#include "esp_log.h"
 
 #define MOUNT_POINT "/sdcard"
 
-extern USER_CONSOLE *console_obj;
+/* STATIC */
+char *CmdFilesystem::TAG = {"FILESYS"};
+SemaphoreHandle_t CmdFilesystem::_path_change = xSemaphoreCreateBinary();
+std::string CmdFilesystem::current_path = MOUNT_POINT;
 
-static std::string current_path = MOUNT_POINT; // 维护当前工作目录
+/* FUNCTION */
+std::string CmdFilesystem::getFileType(const struct stat &st)
+{
+    if (S_ISDIR(st.st_mode))
+    {
+        return LOG_ANSI_COLOR(LOG_ANSI_COLOR_BLUE) "DIR" LOG_ANSI_COLOR_RESET;
+    }
+    else
+    {
+        return LOG_ANSI_COLOR(LOG_ANSI_COLOR_GREEN) "FILE" LOG_ANSI_COLOR_RESET;
+    }
+}
 
-// 拼接路径
-static std::string join_path(std::string_view base, std::string_view sub)
+std::string CmdFilesystem::joinPath(std::string_view base, std::string_view sub)
 {
     if (!sub.empty() && sub[0] == '/')
     {
@@ -26,17 +40,17 @@ static std::string join_path(std::string_view base, std::string_view sub)
     return std::string(base) + "/" + std::string(sub);
 }
 
-// 定义 ls 命令的参数结构
-static struct
+int CmdFilesystem::cmdLs(int argc, char **argv)
 {
-    struct arg_str *dirname;
-    struct arg_end *end;
-} ls_args;
+    static struct
+    {
+        struct arg_str *dirname;
+        struct arg_end *end;
+    } ls_args;
 
-// `ls` 命令
-static int cmd_ls(int argc, char **argv)
-{
-    // 解析命令行参数
+    ls_args.dirname = arg_str0(nullptr, nullptr, "<path>", "Directory path");
+    ls_args.end = arg_end(1);
+
     int nerrors = arg_parse(argc, argv, (void **)&ls_args);
     if (nerrors > 0)
     {
@@ -44,11 +58,7 @@ static int cmd_ls(int argc, char **argv)
         return 1;
     }
 
-    // 获取路径参数
-    // std::string input_path = (ls_args.dirname->count > 0) ? ls_args.dirname->sval[0] : ".";
-    std::string path = join_path(current_path, ls_args.dirname->sval[0]);
-
-    printf("path: %s\n", path.c_str());
+    std::string path = joinPath(current_path, ls_args.dirname->sval[0]);
 
     DIR *dir = opendir(path.c_str());
     if (!dir)
@@ -66,17 +76,17 @@ static int cmd_ls(int argc, char **argv)
     return 0;
 }
 
-// 定义 cd 命令的参数结构
-static struct
+int CmdFilesystem::cmdCd(int argc, char **argv)
 {
-    struct arg_str *dirname;
-    struct arg_end *end;
-} cd_args;
+    static struct
+    {
+        struct arg_str *dirname;
+        struct arg_end *end;
+    } cd_args;
 
-// `cd` 命令
-static int cmd_cd(int argc, char **argv)
-{
-    // 解析命令行参数
+    cd_args.dirname = arg_str1(nullptr, nullptr, "<dirname>", "Directory to change to");
+    cd_args.end = arg_end(2);
+
     int nerrors = arg_parse(argc, argv, (void **)&cd_args);
     if (nerrors != 0)
     {
@@ -84,12 +94,10 @@ static int cmd_cd(int argc, char **argv)
         return 1;
     }
 
-    // 获取路径参数
     std::string input_path{cd_args.dirname->sval[0]};
-
-    // 处理 cd 命令
     std::string new_path;
-    if (input_path.compare(".") == 0)
+
+    if (input_path.compare("..") == 0)
     {
         size_t last_slash = current_path.find_last_of('/');
         if (last_slash != std::string::npos && last_slash != 0)
@@ -107,7 +115,7 @@ static int cmd_cd(int argc, char **argv)
     }
     else
     {
-        new_path = join_path(current_path, input_path);
+        new_path = joinPath(current_path, input_path);
         struct stat st;
         if (stat(new_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
         {
@@ -115,26 +123,26 @@ static int cmd_cd(int argc, char **argv)
         }
         else
         {
-            printf("Failed to change directory: %s\n", input_path.c_str());
+            ESP_LOGE(TAG, "Failed to change directory: %s\n", input_path.c_str());
             return 1;
         }
     }
 
-    // 更新当前工作目录和 prompt
-    console_obj->set_path(current_path);
-
+    xSemaphoreGive(_path_change);
     return 0;
 }
 
-static struct
+int CmdFilesystem::cmdMkdir(int argc, char **argv)
 {
-    struct arg_str *dirname;
-    struct arg_end *end;
-} mkdir_args;
+    static struct
+    {
+        struct arg_str *dirname;
+        struct arg_end *end;
+    } mkdir_args;
 
-// `mkdir` 命令
-static int cmd_mkdir(int argc, char **argv)
-{
+    mkdir_args.dirname = arg_str1(nullptr, nullptr, "<dirname>", "Directory name to create");
+    mkdir_args.end = arg_end(2);
+
     int nerrors = arg_parse(argc, argv, (void **)&mkdir_args);
     if (nerrors != 0)
     {
@@ -146,7 +154,6 @@ static int cmd_mkdir(int argc, char **argv)
     char full_path[128];
     snprintf(full_path, sizeof(full_path), "/sdcard/%s", dirname);
 
-    // 创建目录
     if (mkdir(full_path, 0755) != 0)
     {
         ESP_LOGE("mkdir", "Failed to create directory: %s", full_path);
@@ -157,24 +164,13 @@ static int cmd_mkdir(int argc, char **argv)
     return 0;
 }
 
-// `pwd` 命令
-static int cmd_pwd(int argc, char **argv)
+int CmdFilesystem::cmdPwd(int argc, char **argv)
 {
-    printf("%s\n", current_path.c_str());
+    ESP_LOGI(TAG, "%s\n", current_path.c_str());
     return 0;
 }
 
-// 定义 rm 命令的参数结构
-static struct
-{
-    struct arg_lit *recursive; // -r 参数
-    struct arg_lit *force;     // -f 参数
-    struct arg_str *path;      // 文件或目录路径
-    struct arg_end *end;       // 结束标记
-} rm_args;
-
-// 递归删除目录
-static int remove_directory(const char *path)
+int CmdFilesystem::removeDirectory(const char *path)
 {
     DIR *dir = opendir(path);
     if (!dir)
@@ -190,13 +186,13 @@ static int remove_directory(const char *path)
             continue;
         }
 
-        std::string full_path = join_path(path, entry->d_name);
+        std::string full_path = joinPath(path, entry->d_name);
         struct stat st;
         if (stat(full_path.c_str(), &st) == 0)
         {
             if (S_ISDIR(st.st_mode))
             {
-                if (remove_directory(full_path.c_str()) != 0)
+                if (removeDirectory(full_path.c_str()) != 0)
                 {
                     closedir(dir);
                     return -1;
@@ -217,10 +213,21 @@ static int remove_directory(const char *path)
     return rmdir(path);
 }
 
-// `rm` 命令
-static int cmd_rm(int argc, char **argv)
+int CmdFilesystem::cmdRm(int argc, char **argv)
 {
-    // 解析命令行参数
+    static struct
+    {
+        struct arg_lit *recursive;
+        struct arg_lit *force;
+        struct arg_str *path;
+        struct arg_end *end;
+    } rm_args;
+
+    rm_args.recursive = arg_lit0("r", "recursive", "Remove directories and their contents recursively");
+    rm_args.force = arg_lit0("f", "force", "Ignore nonexistent files and arguments, never prompt");
+    rm_args.path = arg_str1(nullptr, nullptr, "<path>", "File or directory to remove");
+    rm_args.end = arg_end(2);
+
     int nerrors = arg_parse(argc, argv, (void **)&rm_args);
     if (nerrors > 0)
     {
@@ -229,58 +236,57 @@ static int cmd_rm(int argc, char **argv)
     }
 
     const char *path = rm_args.path->sval[0];
-    std::string full_path = join_path(current_path, path);
+    std::string full_path = joinPath(current_path, path);
 
     struct stat st;
     if (stat(full_path.c_str(), &st) != 0)
     {
-        if (!rm_args.force->count) // 如果文件不存在且没有 -f 参数，报错
+        if (!rm_args.force->count)
         {
-            printf("rm: cannot remove '%s': No such file or directory\n", path);
+            ESP_LOGE(TAG, "rm: cannot remove '%s': No such file or directory\n", path);
             return 1;
         }
-        return 0; // 如果文件不存在但有 -f 参数，静默返回
+        return 0;
     }
 
     if (S_ISDIR(st.st_mode))
     {
-        if (!rm_args.recursive->count) // 如果是目录但没有 -r 参数，报错
+        if (!rm_args.recursive->count)
         {
-            printf("rm: cannot remove '%s': Is a directory\n", path);
+            ESP_LOGE(TAG, "rm: cannot remove '%s': Is a directory\n", path);
             return 1;
         }
 
-        // 递归删除目录
-        if (remove_directory(full_path.c_str()) != 0)
+        if (removeDirectory(full_path.c_str()) != 0)
         {
-            printf("rm: failed to remove '%s'\n", path);
+            ESP_LOGE(TAG, "rm: failed to remove '%s'\n", path);
             return 1;
         }
     }
     else
     {
-        // 删除文件
         if (unlink(full_path.c_str()) != 0)
         {
-            printf("rm: failed to remove '%s'\n", path);
+            ESP_LOGE(TAG, "rm: failed to remove '%s'\n", path);
             return 1;
         }
     }
 
-    printf("Removed: %s\n", path);
+    ESP_LOGI(TAG, "Removed: %s\n", path);
     return 0;
 }
 
-// 定义 cat 命令的参数结构
-static struct
+int CmdFilesystem::cmdCat(int argc, char **argv)
 {
-    struct arg_str *filename;
-    struct arg_end *end;
-} cat_args;
+    static struct
+    {
+        struct arg_str *filename;
+        struct arg_end *end;
+    } cat_args;
 
-// `cat` 命令
-static int cmd_cat(int argc, char **argv)
-{
+    cat_args.filename = arg_str1(nullptr, nullptr, "<filename>", "File to display");
+    cat_args.end = arg_end(2);
+
     int nerrors = arg_parse(argc, argv, (void **)&cat_args);
     if (nerrors != 0)
     {
@@ -288,7 +294,7 @@ static int cmd_cat(int argc, char **argv)
         return 1;
     }
 
-    std::string path = join_path(current_path, cat_args.filename->sval[0]);
+    std::string path = joinPath(current_path, cat_args.filename->sval[0]);
 
     FILE *file = fopen(path.c_str(), "r");
     if (!file)
@@ -307,15 +313,7 @@ static int cmd_cat(int argc, char **argv)
     return 0;
 }
 
-// 定义 tree 命令的参数结构
-static struct
-{
-    struct arg_str *dirname; // 目录路径
-    struct arg_end *end;     // 结束标记
-} tree_args;
-
-// 递归打印目录树
-static void print_tree(const std::string &path, const std::string &prefix)
+void CmdFilesystem::printTree(const std::string &path, const std::string &prefix)
 {
     DIR *dir = opendir(path.c_str());
     if (!dir)
@@ -325,36 +323,66 @@ static void print_tree(const std::string &path, const std::string &prefix)
     }
 
     struct dirent *entry;
+    std::vector<std::string> entries;
+
+    // Read directory entries
     while ((entry = readdir(dir)) != nullptr)
     {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
-            continue; // 忽略 . 和 ..
+            continue; // Skip "." and ".."
         }
-
-        std::string full_path = join_path(path, entry->d_name);
-        struct stat st;
-        if (stat(full_path.c_str(), &st) != 0)
-        {
-            continue; // 忽略无法访问的文件或目录
-        }
-
-        printf("%s%s\n", prefix.c_str(), entry->d_name);
-
-        if (S_ISDIR(st.st_mode))
-        {
-            // 如果是目录，递归打印
-            print_tree(full_path, prefix + "    ");
-        }
+        entries.push_back(entry->d_name);
     }
 
     closedir(dir);
+
+    // Sort entries for consistent output
+    std::sort(entries.begin(), entries.end());
+
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        std::string full_path = joinPath(path, entries[i]);
+        struct stat st;
+        if (stat(full_path.c_str(), &st) != 0)
+        {
+            continue; // Skip if stat fails
+        }
+
+        std::string type = getFileType(st);
+        std::string name = entries[i];
+
+        // Print current entry
+        printf("%s", prefix.c_str());
+        if (i == entries.size() - 1)
+        {
+            printf("└── ");
+        }
+        else
+        {
+            printf("├── ");
+        }
+        printf("%s %s\n", type.c_str(), name.c_str());
+
+        // Recursively print subdirectories
+        if (S_ISDIR(st.st_mode))
+        {
+            printTree(full_path, prefix + (i == entries.size() - 1 ? "    " : "│   "));
+        }
+    }
 }
 
-// `tree` 命令
-static int cmd_tree(int argc, char **argv)
+int CmdFilesystem::cmdTree(int argc, char **argv)
 {
-    // 解析命令行参数
+    static struct
+    {
+        struct arg_str *dirname;
+        struct arg_end *end;
+    } tree_args;
+
+    tree_args.dirname = arg_str0(nullptr, nullptr, "<path>", "Directory to list (default: current directory)");
+    tree_args.end = arg_end(1);
+
     int nerrors = arg_parse(argc, argv, (void **)&tree_args);
     if (nerrors > 0)
     {
@@ -362,114 +390,68 @@ static int cmd_tree(int argc, char **argv)
         return 1;
     }
 
-    // 获取路径参数
     std::string input_path{tree_args.dirname->sval[0]};
-    std::string path = (input_path.compare(".") != 0) ? join_path(current_path, input_path) : current_path;
+    std::string path = (input_path.compare(".") != 0) ? joinPath(current_path, input_path) : current_path;
 
-    // printf("%s\n", path.c_str()); // 打印根目录
-    print_tree(path, ""); // 递归打印目录树
-
+    printTree(path, "");
     return 0;
 }
 
-// 注册命令
-void register_commands(void)
+void CmdFilesystem::registerCommands()
 {
-    cd_args.dirname = arg_str1(NULL, NULL, "<dirname>", "Directory to change to");
-    cd_args.end = arg_end(2);
-
     esp_console_cmd_t cd_cmd = {
         .command = "cd",
         .help = "Change the current directory",
         .hint = "<path>",
-        .func = &cmd_cd,
-        .argtable = &cd_args};
+        .func = &cmdCd,
+        .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&cd_cmd));
-
-    mkdir_args.dirname = arg_str1(NULL, NULL, "<dirname>", "Directory name to create");
-    mkdir_args.end = arg_end(2);
 
     esp_console_cmd_t mkdir_cmd = {
         .command = "mkdir",
         .help = "Create a directory",
         .hint = "<directory>",
-        .func = &cmd_mkdir,
-        .argtable = &mkdir_args,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    };
+        .func = &cmdMkdir,
+        .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&mkdir_cmd));
-
-    ls_args.dirname = arg_str0(NULL, NULL, "<path>", "Directory path");
-    ls_args.end = arg_end(1); // 最多允许 1 个错误
 
     esp_console_cmd_t ls_cmd = {
         .command = "ls",
         .help = "List files in the current directory",
         .hint = "[path]",
-        .func = &cmd_ls,
-        .argtable = &ls_args,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    };
+        .func = &cmdLs,
+        .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&ls_cmd));
 
-    // 注册 pwd 命令
     esp_console_cmd_t pwd_cmd = {
         .command = "pwd",
         .help = "Print the current working directory",
-        .hint = NULL,
-        .func = &cmd_pwd,
-        .argtable = NULL,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    };
+        .hint = nullptr,
+        .func = &cmdPwd,
+        .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&pwd_cmd));
-
-    // 注册 rm 命令
-    rm_args.recursive = arg_lit0("r", "recursive", "Remove directories and their contents recursively");
-    rm_args.force = arg_lit0("f", "force", "Ignore nonexistent files and arguments, never prompt");
-    rm_args.path = arg_str1(NULL, NULL, "<path>", "File or directory to remove");
-    rm_args.end = arg_end(2);
 
     esp_console_cmd_t rm_cmd = {
         .command = "rm",
         .help = "Remove files or directories",
         .hint = "[-r] [-f] <path>",
-        .func = &cmd_rm,
-        .argtable = &rm_args,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    };
+        .func = &cmdRm,
+        .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&rm_cmd));
-
-    // 注册 cat 命令
-    cat_args.filename = arg_str1(NULL, NULL, "<filename>", "File to display");
-    cat_args.end = arg_end(2);
 
     esp_console_cmd_t cat_cmd = {
         .command = "cat",
         .help = "Display the contents of a file",
         .hint = "<file>",
-        .func = &cmd_cat,
-        .argtable = &cat_args,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    };
+        .func = &cmdCat,
+        .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&cat_cmd));
-
-    // 注册 tree 命令
-    tree_args.dirname = arg_str0(NULL, NULL, "<path>", "Directory to list (default: current directory)");
-    tree_args.end = arg_end(1);
 
     esp_console_cmd_t tree_cmd = {
         .command = "tree",
         .help = "List directory contents in a tree-like format",
         .hint = "[path]",
-        .func = &cmd_tree,
-        .argtable = &tree_args,
-        .func_w_context = nullptr,
-        .context = nullptr,
-    };
+        .func = &cmdTree,
+        .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&tree_cmd));
 }

@@ -14,11 +14,14 @@ extern "C"
     class SNTPManager
     {
     public:
-        SNTPManager(SemaphoreHandle_t &sntp_sem);
+        SNTPManager(SemaphoreHandle_t &sntp_sem, EventGroupHandle_t &wifi_event);
         ~SNTPManager();
 
     private:
         static constexpr const char *TAG = "SNTPManager";
+
+        SemaphoreHandle_t &_sntp_sem;
+        EventGroupHandle_t &_wifi_event;
 
         bool now_syn_yet = 1;
 
@@ -32,9 +35,6 @@ extern "C"
             struct arg_str *server;
             struct arg_end *end;
         } ntp_args;
-
-        // QueueHandle_t rtc_handle;
-        SemaphoreHandle_t _sntp_sem;
 
         // 注册 NTP 命令行命令
         void register_ntp_command();

@@ -16,14 +16,14 @@ static const uint32_t StackSize = 1024 * 10;
 // 定义静态成员变量
 SNTPManager::NtpArgs SNTPManager::ntp_args;
 
-EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
 
 void SNTPManager::task(void)
 {
     while (1)
     {
-        if (xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT,
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (xEventGroupWaitBits(_wifi_event, CONNECTED_BIT,
                                 pdFALSE, pdTRUE, pdMS_TO_TICKS(1000)) &&
             now_syn_yet == 1)
         {
@@ -35,9 +35,8 @@ void SNTPManager::task(void)
     }
 }
 
-SNTPManager::SNTPManager(SemaphoreHandle_t &sntp_sem) : _sntp_sem(sntp_sem)
+SNTPManager::SNTPManager(SemaphoreHandle_t &sntp_sem, EventGroupHandle_t &wifi_event) : _sntp_sem(sntp_sem), _wifi_event(wifi_event)
 {
-    wifi_event_group = xEventGroupCreate();
 
     if (_sntp_sem == nullptr)
     {
@@ -54,7 +53,7 @@ SNTPManager::SNTPManager(SemaphoreHandle_t &sntp_sem) : _sntp_sem(sntp_sem)
         instance->task(); // 调用类的成员函数
     };
 
-    xTaskCreate(task_func, "sntp", StackSize, this, 10, NULL);
+    xTaskCreate(task_func, "sntp", StackSize, this, configMAX_PRIORITIES - 3, NULL);
 
     // 注册命令行命令
     register_ntp_command();

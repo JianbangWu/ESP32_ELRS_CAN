@@ -102,6 +102,7 @@
         "user_console.hpp": "c",
         "reent.h": "c",
         "esp_err.h": "c",
-        "twai_types.h": "c"
+        "twai_types.h": "c",
+        "esp_log_level.h": "c"
     }
 }

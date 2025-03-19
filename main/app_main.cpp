@@ -22,6 +22,9 @@
 #include "user_console.hpp"
 #include "twai_device.hpp"
 #include "logger.hpp"
+#include "system_cmd.hpp"
+#include "nvs_component.hpp"
+#include "filesystem_cmd.hpp"
 
 USER_CONSOLE *console_obj;
 
@@ -35,8 +38,10 @@ extern "C" void app_main(void)
         return;
     }
 
+    EventGroupHandle_t wifi_event_group = xEventGroupCreate();
+
     SemaphoreHandle_t sntp_sem = xSemaphoreCreateBinary();
-    SNTPManager sntp_obj(sntp_sem);
+    SNTPManager sntp_obj(sntp_sem, wifi_event_group);
     RTC ds3231_obj(sntp_sem);
     ESP_LOGI("RTC_IMTE", "%s", ds3231_obj.getTimestamp().c_str());
 
@@ -50,10 +55,18 @@ extern "C" void app_main(void)
     QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
     TWAI_Device twai_obj(twai_tx_queue, twai_rx_queue);
 
-    console_obj = new USER_CONSOLE();
+    console_obj = new USER_CONSOLE(CmdFilesystem::_path_change, CmdFilesystem::current_path);
 
-    WiFiComponent wifi;
+    LoggerBase wifi_key("/sdcard/wifi");
+
+    WiFiComponent wifi(wifi_event_group, wifi_key);
     wifi.registerConsoleCommands();
+
+    CmdSystem::registerSystem();
+
+    CmdNVS::registerNVS();
+
+    CmdFilesystem::registerCommands();
 
     // 创建 LoggerBase 实例，挂载点为 "/sdcard/sensor_data"
     // LoggerBase logger("/sdcard/sensor_data");

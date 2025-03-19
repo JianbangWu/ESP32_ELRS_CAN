@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string.h>
+#include "logger.hpp"
 
 #ifdef __cplusplus
 extern "C"
@@ -17,8 +18,16 @@ extern "C"
    class WiFiComponent
    {
    public:
-      WiFiComponent();
+      WiFiComponent(EventGroupHandle_t &wifi_event, LoggerBase &logger);
       ~WiFiComponent();
+
+      struct
+      {
+         struct arg_str *ssid;
+         struct arg_str *password;
+         struct arg_int *timeout;
+         struct arg_end *end;
+      } join_args;
 
       bool connect(const std::string &ssid, const std::string &password, int timeout_ms = 10000);
       bool disconnect();
@@ -27,6 +36,9 @@ extern "C"
       void registerConsoleCommands();
 
    private:
+      EventGroupHandle_t &_wifi_event;
+      LoggerBase &_wifikey_logger;
+
       static void eventHandler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
       void initializeWiFi();
 
@@ -37,7 +49,6 @@ extern "C"
       // 修改：将 TAG 声明为类的静态成员变量
       static const char *TAG;
 
-      EventGroupHandle_t wifi_event_group;
       const int CONNECTED_BIT = BIT0;
       bool initialized;
    };
