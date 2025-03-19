@@ -18,7 +18,7 @@
 #include "ds3231m.hpp"
 #include "sd_card.hpp"
 #include "beep.hpp"
-
+#include "wifi_component.hpp"
 #include "user_console.hpp"
 #include "twai_device.hpp"
 #include "logger.hpp"
@@ -51,6 +51,9 @@ extern "C" void app_main(void)
     TWAI_Device twai_obj(twai_tx_queue, twai_rx_queue);
 
     console_obj = new USER_CONSOLE();
+
+    WiFiComponent wifi;
+    wifi.registerConsoleCommands();
 
     // 创建 LoggerBase 实例，挂载点为 "/sdcard/sensor_data"
     // LoggerBase logger("/sdcard/sensor_data");

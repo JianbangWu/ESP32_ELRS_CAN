@@ -12,9 +12,6 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 
-#include "cmd_system.h"
-#include "cmd_nvs.h"
-#include "cmd_wifi.h"
 #include "sd_card.hpp"
 
 namespace fs = std::filesystem;
@@ -167,9 +164,6 @@ USER_CONSOLE::USER_CONSOLE()
     }
 
     esp_console_register_help_command();
-    register_system_common();
-    register_wifi();
-    register_nvs();
 
     current_dir = {"/sdcard"};
 
