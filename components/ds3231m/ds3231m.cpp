@@ -10,28 +10,26 @@
 #include "driver/gpio.h"
 #include "ds3231m.hpp"
 
-static const uint32_t StackSize = 1024 * 7;
+static const uint32_t StackSize = 1024 * 5;
 
 void IRAM_ATTR RTC::gpio_isr_handler(void *arg)
 {
     RTC *instance = static_cast<RTC *>(arg);
-    xQueueSendFromISR(instance->isr_event, &instance->int_io_pin, NULL);
+    xSemaphoreGiveFromISR(instance->_isr_sem, nullptr);
 }
 
 void RTC::task(void)
 {
-    gpio_num_t io_num;
-    uint8_t ntp_finished;
     while (1)
     {
-        if (xQueueReceive(isr_event, &io_num, pdMS_TO_TICKS(10)))
+        if (xSemaphoreTake(_isr_sem, pdMS_TO_TICKS(200)))
         {
             ESP_LOGI(TAG, "INT Task");
         }
-        if (xQueueReceive(rtc_handle, &ntp_finished, pdMS_TO_TICKS(10)))
+        if (xSemaphoreTake(_sntp_sem, pdMS_TO_TICKS(500)))
         {
-            time_t now{0};
-            struct tm timeinfo{0};
+            time_t now;
+            struct tm timeinfo;
             time(&now);
             localtime_r(&now, &timeinfo);
             set_time(&timeinfo);
@@ -39,19 +37,21 @@ void RTC::task(void)
     }
 }
 
-RTC::RTC(QueueHandle_t &rtc_handle,
+RTC::RTC(SemaphoreHandle_t &sntp_sem,
          gpio_num_t rst_pin,
          gpio_num_t init_pin,
          gpio_num_t clock_out_pin,
          gpio_num_t sda_pin,
          gpio_num_t scl_pin,
-         uint16_t dev_addr) : rtc_handle(rtc_handle),
-                              rst_io_pin(rst_pin),
-                              int_io_pin(init_pin),
-                              clock_out_pin(clock_out_pin)
+         uint16_t dev_addr) : _sntp_sem(sntp_sem),
+                              _rst_io_pin(rst_pin),
+                              _int_io_pin(init_pin),
+                              _clock_out_pin(clock_out_pin)
 
 {
-    if (rtc_handle == nullptr)
+    _isr_sem = xSemaphoreCreateBinary();
+
+    if (_sntp_sem == nullptr)
     {
         ESP_LOGE(TAG, "Invalid queue handle provided");
         return; // 或者抛出异常
@@ -101,18 +101,16 @@ void RTC::init_io(void)
     /* RST_PIN */
     io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = (1ULL << rst_io_pin);
+    io_conf.pin_bit_mask = (1ULL << _rst_io_pin);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
 
     /* INT PIN */
     io_conf.intr_type = GPIO_INTR_NEGEDGE;
-    io_conf.pin_bit_mask = (1ULL << int_io_pin);
+    io_conf.pin_bit_mask = (1ULL << _int_io_pin);
     io_conf.mode = GPIO_MODE_INPUT;
     gpio_config(&io_conf);
-
-    isr_event = xQueueCreate(3, sizeof(uint32_t));
 
     auto task_func = [](void *arg)
     {
@@ -130,7 +128,7 @@ void RTC::init_io(void)
         return;
     }
 
-    if (ESP_OK == (gpio_isr_handler_add(int_io_pin, gpio_isr_handler, this)))
+    if (ESP_OK == (gpio_isr_handler_add(_int_io_pin, gpio_isr_handler, this)))
     {
         ESP_LOGI(TAG, "ISR install Success");
     }
@@ -220,9 +218,9 @@ void RTC::set_time(tm *new_time)
 /* USER FUNCTION */
 void RTC::reset(void)
 {
-    gpio_set_level(rst_io_pin, 0);
+    gpio_set_level(_rst_io_pin, 0);
     vTaskDelay(pdMS_TO_TICKS(1));
-    gpio_set_level(rst_io_pin, 1);
+    gpio_set_level(_rst_io_pin, 1);
     ESP_LOGI(TAG, "reset");
 }
 

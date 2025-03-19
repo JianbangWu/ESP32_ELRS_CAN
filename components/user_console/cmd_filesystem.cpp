@@ -19,6 +19,10 @@ static std::string current_path = MOUNT_POINT; // 维护当前工作目录
 // 拼接路径
 static std::string join_path(std::string_view base, std::string_view sub)
 {
+    if (!sub.empty() && sub[0] == '/')
+    {
+        sub.remove_prefix(1); // 移除开头的 '/'
+    }
     return std::string(base) + "/" + std::string(sub);
 }
 
@@ -41,10 +45,8 @@ static int cmd_ls(int argc, char **argv)
     }
 
     // 获取路径参数
-    std::string input_path{ls_args.dirname->sval[0]};
-    printf("input_path: %s\n", input_path.c_str());
-
-    std::string path = (input_path.compare(".") != 0) ? join_path(current_path, input_path) : current_path;
+    // std::string input_path = (ls_args.dirname->count > 0) ? ls_args.dirname->sval[0] : ".";
+    std::string path = join_path(current_path, ls_args.dirname->sval[0]);
 
     printf("path: %s\n", path.c_str());
 
@@ -76,7 +78,7 @@ static int cmd_cd(int argc, char **argv)
 {
     // 解析命令行参数
     int nerrors = arg_parse(argc, argv, (void **)&cd_args);
-    if (nerrors > 0)
+    if (nerrors != 0)
     {
         arg_print_errors(stderr, cd_args.end, argv[0]);
         return 1;
@@ -286,23 +288,21 @@ static int cmd_cat(int argc, char **argv)
         return 1;
     }
 
-    const char *filename = cat_args.filename->sval[0];
-    char full_path[128];
-    snprintf(full_path, sizeof(full_path), "/sdcard/%s", filename);
+    std::string path = join_path(current_path, cat_args.filename->sval[0]);
 
-    FILE *file = fopen(full_path, "r");
+    FILE *file = fopen(path.c_str(), "r");
     if (!file)
     {
-        ESP_LOGE("cat", "Failed to open file: %s", full_path);
+        ESP_LOGE("cat", "Failed to open file: %s", path.c_str());
         return 1;
     }
 
-    char buffer[128];
+    char buffer[512];
     while (fgets(buffer, sizeof(buffer), file))
     {
         printf("%s", buffer);
     }
-
+    printf("\r\n");
     fclose(file);
     return 0;
 }
@@ -400,7 +400,7 @@ void register_commands(void)
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&mkdir_cmd));
 
-    ls_args.dirname = arg_str1(NULL, NULL, "<path>", "Directory path");
+    ls_args.dirname = arg_str0(NULL, NULL, "<path>", "Directory path");
     ls_args.end = arg_end(1); // 最多允许 1 个错误
 
     esp_console_cmd_t ls_cmd = {

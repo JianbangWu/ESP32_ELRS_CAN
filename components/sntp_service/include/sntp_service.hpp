@@ -14,7 +14,7 @@ extern "C"
     class SNTPManager
     {
     public:
-        SNTPManager(QueueHandle_t &rtc_handle);
+        SNTPManager(SemaphoreHandle_t &sntp_sem);
         ~SNTPManager();
 
     private:
@@ -23,10 +23,6 @@ extern "C"
         bool now_syn_yet = 1;
 
         void task();
-
-        void register_event_handlers();
-
-        void ip_event_handler(esp_event_base_t event_base, int32_t event_id, void *event_data);
 
         static void start_sntp_service(const char *ntp_server);
 
@@ -37,7 +33,8 @@ extern "C"
             struct arg_end *end;
         } ntp_args;
 
-        QueueHandle_t rtc_handle;
+        // QueueHandle_t rtc_handle;
+        SemaphoreHandle_t _sntp_sem;
 
         // 注册 NTP 命令行命令
         void register_ntp_command();

@@ -19,7 +19,8 @@ extern "C"
     private:
         const char *TAG = "SDCard";
 
-        QueueHandle_t sd_evt_queue;
+        SemaphoreHandle_t det_sem;
+        // QueueHandle_t sd_evt_queue;
 
         static const size_t MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 

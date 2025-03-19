@@ -13,16 +13,17 @@ extern "C"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 
-    class RTC {
+    class RTC
+    {
     private:
-        const char* TAG = "DS3231M";
+        const char *TAG = "DS3231M";
 
-        QueueHandle_t rtc_handle;
-        QueueHandle_t isr_event;
+        SemaphoreHandle_t _isr_sem;
+        SemaphoreHandle_t _sntp_sem;
 
-        gpio_num_t rst_io_pin;
-        gpio_num_t int_io_pin;
-        gpio_num_t clock_out_pin;
+        gpio_num_t _rst_io_pin;
+        gpio_num_t _int_io_pin;
+        gpio_num_t _clock_out_pin;
 
         i2c_master_bus_handle_t bus_handle = nullptr;
         i2c_master_dev_handle_t dev_handle = nullptr;
@@ -32,7 +33,8 @@ extern "C"
         struct tm alarm2; /* NO SECONDS */
         float temperature;
 
-        enum reg : uint16_t {
+        enum reg : uint16_t
+        {
             REG_SECONDS = 0x00,
             REG_MINUTES,
             REG_HOURS,
@@ -54,8 +56,10 @@ extern "C"
             REG_TEMPERATURE_L,
         };
 
-        struct {
-            struct {
+        struct
+        {
+            struct
+            {
                 uint8_t alarm1_enable : 1;
                 uint8_t alarm2_enable : 1;
                 uint8_t interrupt_pin_enable : 1;
@@ -64,7 +68,8 @@ extern "C"
                 uint8_t set_bat_backed_square_wave_enable : 1;
                 uint8_t close_oscillator : 1;
             } control;
-            struct {
+            struct
+            {
                 uint8_t alarm1_flag : 1;
                 uint8_t alarm2_flag : 1;
                 uint8_t is_busy : 1;
@@ -75,12 +80,12 @@ extern "C"
 
         } reg;
 
-        static void IRAM_ATTR gpio_isr_handler(void* arg);
+        static void IRAM_ATTR gpio_isr_handler(void *arg);
 
         void init_io(void);
 
         void get_temperature(void);
-        struct tm* get_time(void);
+        struct tm *get_time(void);
         void get_config(void);
         void get_status(void);
 
@@ -90,10 +95,10 @@ extern "C"
         void task(void);
 
     public:
-        RTC(QueueHandle_t& rtc_handle,
+        RTC(QueueHandle_t &rtc_handle,
             gpio_num_t rst_pin = GPIO_NUM_8,
             gpio_num_t init_pin = GPIO_NUM_18,
-            gpio_num_t clock_out_pin = GPIO_NUM_17,
+            gpio_num_t _clock_out_pin = GPIO_NUM_17,
             gpio_num_t sda_pin = GPIO_NUM_15,
             gpio_num_t scl_pin = GPIO_NUM_16,
             uint16_t dev_addr = 0x68);
@@ -102,7 +107,7 @@ extern "C"
 
         void reset(void);
 
-        void set_time(tm* new_time);
+        void set_time(tm *new_time);
 
         std::string getTimestamp();
     };

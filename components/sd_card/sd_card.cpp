@@ -9,6 +9,7 @@
 #include "sdmmc_cmd.h"
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
@@ -17,17 +18,17 @@ static const uint32_t StackSize = 1024 * 5;
 void IRAM_ATTR SDCard::gpio_isr_handler(void *arg)
 {
     SDCard *instance = static_cast<SDCard *>(arg);
-    xQueueSendFromISR(instance->sd_evt_queue, &instance->_det_pin, NULL);
+    // xQueueSendFromISR(instance->sd_evt_queue, &instance->_det_pin, NULL);
+    xSemaphoreGiveFromISR(instance->det_sem, nullptr);
 }
 
 void SDCard::card_detect()
 {
-    gpio_num_t io_num;
     while (1)
     {
-        if (xQueueReceive(sd_evt_queue, &io_num, pdMS_TO_TICKS(20)))
+        if (xSemaphoreTake(det_sem, pdMS_TO_TICKS(100)))
         {
-            if (gpio_get_level(io_num) == 1)
+            if (gpio_get_level(_det_pin) == 1)
             {
                 ESP_LOGI(TAG, "SD Card is Plug-In!");
                 mount_sd();
@@ -58,7 +59,8 @@ SDCard::SDCard(gpio_num_t clk_pin,
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
-    sd_evt_queue = xQueueCreate(1, sizeof(uint32_t));
+    // sd_evt_queue = xQueueCreate(1, sizeof(uint32_t));
+    det_sem = xSemaphoreCreateBinary(); // 创建二进制信号量
 
     auto task_func = [](void *arg)
     {

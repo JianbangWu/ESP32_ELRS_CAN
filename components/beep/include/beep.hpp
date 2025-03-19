@@ -11,10 +11,18 @@ extern "C"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+    // 定义蜂鸣器消息类型
+    struct BeeperMessage
+    {
+        uint32_t frequency; // 频率
+        uint32_t duration;  // 持续时间（周期）
+    };
+
     class Buzzer
     {
     public:
-        Buzzer(const gpio_num_t gpio_num = GPIO_NUM_10,
+        Buzzer(QueueHandle_t &queue,
+               const gpio_num_t gpio_num = GPIO_NUM_10,
                ledc_clk_cfg_t clk_cfg = LEDC_AUTO_CLK,
                ledc_mode_t speed_mode = LEDC_LOW_SPEED_MODE,
                ledc_timer_bit_t timer_bit = LEDC_TIMER_13_BIT,
@@ -28,23 +36,16 @@ extern "C"
     private:
         const char *Tag = "Buzzer";
 
-        // 定义蜂鸣器消息类型
-        struct BeeperMessage
-        {
-            uint32_t frequency; // 频率
-            uint32_t duration;  // 持续时间（周期）
-        };
-
         void Stop();
         void Start(uint32_t frequency);
         void Task();
 
-        TaskHandle_t task_handle_;
-        QueueHandle_t queue_handle_;
-        ledc_mode_t speed_mode_;
-        ledc_timer_bit_t timer_bit_;
-        ledc_timer_t timer_num_;
-        ledc_channel_t channel_;
+        TaskHandle_t _task_handle;
+        QueueHandle_t _queue_handle;
+        ledc_mode_t _speed_mode;
+        ledc_timer_bit_t _timer_bit;
+        ledc_timer_t _timer_num;
+        ledc_channel_t _channel;
         uint32_t idle_level_;
     };
 
