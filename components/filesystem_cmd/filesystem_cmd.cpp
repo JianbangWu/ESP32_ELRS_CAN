@@ -14,9 +14,16 @@
 #define MOUNT_POINT "/sdcard"
 
 /* STATIC */
-char *CmdFilesystem::TAG = {"FILESYS"};
-SemaphoreHandle_t CmdFilesystem::_path_change = xSemaphoreCreateBinary();
-std::string CmdFilesystem::current_path = MOUNT_POINT;
+decltype(CmdFilesystem::TAG) CmdFilesystem::TAG = {"FILESYS"};
+decltype(CmdFilesystem::_prompt_change_sem) CmdFilesystem::_prompt_change_sem = xSemaphoreCreateBinary();
+decltype(CmdFilesystem::_current_path) CmdFilesystem::_current_path{MOUNT_POINT};
+
+decltype(CmdFilesystem::ls_args) CmdFilesystem::ls_args;
+decltype(CmdFilesystem::cd_args) CmdFilesystem::cd_args;
+decltype(CmdFilesystem::mkdir_args) CmdFilesystem::mkdir_args;
+decltype(CmdFilesystem::rm_args) CmdFilesystem::rm_args;
+decltype(CmdFilesystem::cat_args) CmdFilesystem::cat_args;
+decltype(CmdFilesystem::tree_args) CmdFilesystem::tree_args;
 
 /* FUNCTION */
 std::string CmdFilesystem::getFileType(const struct stat &st)
@@ -42,15 +49,6 @@ std::string CmdFilesystem::joinPath(std::string_view base, std::string_view sub)
 
 int CmdFilesystem::cmdLs(int argc, char **argv)
 {
-    static struct
-    {
-        struct arg_str *dirname;
-        struct arg_end *end;
-    } ls_args;
-
-    ls_args.dirname = arg_str0(nullptr, nullptr, "<path>", "Directory path");
-    ls_args.end = arg_end(1);
-
     int nerrors = arg_parse(argc, argv, (void **)&ls_args);
     if (nerrors > 0)
     {
@@ -58,7 +56,7 @@ int CmdFilesystem::cmdLs(int argc, char **argv)
         return 1;
     }
 
-    std::string path = joinPath(current_path, ls_args.dirname->sval[0]);
+    std::string path = joinPath(_current_path, ls_args.dirname->sval[0]);
 
     DIR *dir = opendir(path.c_str());
     if (!dir)
@@ -78,14 +76,6 @@ int CmdFilesystem::cmdLs(int argc, char **argv)
 
 int CmdFilesystem::cmdCd(int argc, char **argv)
 {
-    static struct
-    {
-        struct arg_str *dirname;
-        struct arg_end *end;
-    } cd_args;
-
-    cd_args.dirname = arg_str1(nullptr, nullptr, "<dirname>", "Directory to change to");
-    cd_args.end = arg_end(2);
 
     int nerrors = arg_parse(argc, argv, (void **)&cd_args);
     if (nerrors != 0)
@@ -99,27 +89,27 @@ int CmdFilesystem::cmdCd(int argc, char **argv)
 
     if (input_path.compare("..") == 0)
     {
-        size_t last_slash = current_path.find_last_of('/');
+        size_t last_slash = _current_path.find_last_of('/');
         if (last_slash != std::string::npos && last_slash != 0)
         {
-            current_path = current_path.substr(0, last_slash);
+            _current_path = _current_path.substr(0, last_slash);
         }
         else
         {
-            current_path = MOUNT_POINT;
+            _current_path = MOUNT_POINT;
         }
     }
     else if (input_path.compare("HOME") == 0)
     {
-        current_path = MOUNT_POINT;
+        _current_path = MOUNT_POINT;
     }
     else
     {
-        new_path = joinPath(current_path, input_path);
+        new_path = joinPath(_current_path, input_path);
         struct stat st;
         if (stat(new_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
         {
-            current_path = new_path;
+            _current_path = new_path;
         }
         else
         {
@@ -128,20 +118,12 @@ int CmdFilesystem::cmdCd(int argc, char **argv)
         }
     }
 
-    xSemaphoreGive(_path_change);
+    xSemaphoreGive(_prompt_change_sem);
     return 0;
 }
 
 int CmdFilesystem::cmdMkdir(int argc, char **argv)
 {
-    static struct
-    {
-        struct arg_str *dirname;
-        struct arg_end *end;
-    } mkdir_args;
-
-    mkdir_args.dirname = arg_str1(nullptr, nullptr, "<dirname>", "Directory name to create");
-    mkdir_args.end = arg_end(2);
 
     int nerrors = arg_parse(argc, argv, (void **)&mkdir_args);
     if (nerrors != 0)
@@ -166,7 +148,7 @@ int CmdFilesystem::cmdMkdir(int argc, char **argv)
 
 int CmdFilesystem::cmdPwd(int argc, char **argv)
 {
-    ESP_LOGI(TAG, "%s\n", current_path.c_str());
+    ESP_LOGI(TAG, "%s\n", _current_path.c_str());
     return 0;
 }
 
@@ -215,18 +197,6 @@ int CmdFilesystem::removeDirectory(const char *path)
 
 int CmdFilesystem::cmdRm(int argc, char **argv)
 {
-    static struct
-    {
-        struct arg_lit *recursive;
-        struct arg_lit *force;
-        struct arg_str *path;
-        struct arg_end *end;
-    } rm_args;
-
-    rm_args.recursive = arg_lit0("r", "recursive", "Remove directories and their contents recursively");
-    rm_args.force = arg_lit0("f", "force", "Ignore nonexistent files and arguments, never prompt");
-    rm_args.path = arg_str1(nullptr, nullptr, "<path>", "File or directory to remove");
-    rm_args.end = arg_end(2);
 
     int nerrors = arg_parse(argc, argv, (void **)&rm_args);
     if (nerrors > 0)
@@ -236,7 +206,7 @@ int CmdFilesystem::cmdRm(int argc, char **argv)
     }
 
     const char *path = rm_args.path->sval[0];
-    std::string full_path = joinPath(current_path, path);
+    std::string full_path = joinPath(_current_path, path);
 
     struct stat st;
     if (stat(full_path.c_str(), &st) != 0)
@@ -278,14 +248,6 @@ int CmdFilesystem::cmdRm(int argc, char **argv)
 
 int CmdFilesystem::cmdCat(int argc, char **argv)
 {
-    static struct
-    {
-        struct arg_str *filename;
-        struct arg_end *end;
-    } cat_args;
-
-    cat_args.filename = arg_str1(nullptr, nullptr, "<filename>", "File to display");
-    cat_args.end = arg_end(2);
 
     int nerrors = arg_parse(argc, argv, (void **)&cat_args);
     if (nerrors != 0)
@@ -294,7 +256,7 @@ int CmdFilesystem::cmdCat(int argc, char **argv)
         return 1;
     }
 
-    std::string path = joinPath(current_path, cat_args.filename->sval[0]);
+    std::string path = joinPath(_current_path, cat_args.filename->sval[0]);
 
     FILE *file = fopen(path.c_str(), "r");
     if (!file)
@@ -374,15 +336,6 @@ void CmdFilesystem::printTree(const std::string &path, const std::string &prefix
 
 int CmdFilesystem::cmdTree(int argc, char **argv)
 {
-    static struct
-    {
-        struct arg_str *dirname;
-        struct arg_end *end;
-    } tree_args;
-
-    tree_args.dirname = arg_str0(nullptr, nullptr, "<path>", "Directory to list (default: current directory)");
-    tree_args.end = arg_end(1);
-
     int nerrors = arg_parse(argc, argv, (void **)&tree_args);
     if (nerrors > 0)
     {
@@ -391,7 +344,7 @@ int CmdFilesystem::cmdTree(int argc, char **argv)
     }
 
     std::string input_path{tree_args.dirname->sval[0]};
-    std::string path = (input_path.compare(".") != 0) ? joinPath(current_path, input_path) : current_path;
+    std::string path = (input_path.compare(".") != 0) ? joinPath(_current_path, input_path) : _current_path;
 
     printTree(path, "");
     return 0;
@@ -399,45 +352,63 @@ int CmdFilesystem::cmdTree(int argc, char **argv)
 
 void CmdFilesystem::registerCommands()
 {
+
+    cd_args.dirname = arg_str1(nullptr, nullptr, "<dirname>", "Directory to change to");
+    cd_args.end = arg_end(2);
+
     esp_console_cmd_t cd_cmd = {
         .command = "cd",
         .help = "Change the current directory",
         .hint = "<path>",
-        .func = &cmdCd,
-        .argtable = nullptr};
+        .func = &CmdFilesystem::cmdCd,
+        .argtable = &cd_args};
     ESP_ERROR_CHECK(esp_console_cmd_register(&cd_cmd));
+
+    mkdir_args.dirname = arg_str1(nullptr, nullptr, "<dirname>", "Directory name to create");
+    mkdir_args.end = arg_end(2);
 
     esp_console_cmd_t mkdir_cmd = {
         .command = "mkdir",
         .help = "Create a directory",
         .hint = "<directory>",
-        .func = &cmdMkdir,
-        .argtable = nullptr};
+        .func = &CmdFilesystem::cmdMkdir,
+        .argtable = &mkdir_args};
     ESP_ERROR_CHECK(esp_console_cmd_register(&mkdir_cmd));
+
+    ls_args.dirname = arg_str0(nullptr, nullptr, "<path>", "Directory path");
+    ls_args.end = arg_end(1);
 
     esp_console_cmd_t ls_cmd = {
         .command = "ls",
         .help = "List files in the current directory",
         .hint = "[path]",
-        .func = &cmdLs,
-        .argtable = nullptr};
+        .func = &CmdFilesystem::cmdLs,
+        .argtable = &ls_args};
     ESP_ERROR_CHECK(esp_console_cmd_register(&ls_cmd));
 
     esp_console_cmd_t pwd_cmd = {
         .command = "pwd",
         .help = "Print the current working directory",
         .hint = nullptr,
-        .func = &cmdPwd,
+        .func = &CmdFilesystem::cmdPwd,
         .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&pwd_cmd));
+
+    rm_args.recursive = arg_lit0("r", "recursive", "Remove directories and their contents recursively");
+    rm_args.force = arg_lit0("f", "force", "Ignore nonexistent files and arguments, never prompt");
+    rm_args.path = arg_str1(nullptr, nullptr, "<path>", "File or directory to remove");
+    rm_args.end = arg_end(2);
 
     esp_console_cmd_t rm_cmd = {
         .command = "rm",
         .help = "Remove files or directories",
         .hint = "[-r] [-f] <path>",
         .func = &cmdRm,
-        .argtable = nullptr};
+        .argtable = &rm_args};
     ESP_ERROR_CHECK(esp_console_cmd_register(&rm_cmd));
+
+    cat_args.filename = arg_str1(nullptr, nullptr, "<filename>", "File to display");
+    cat_args.end = arg_end(2);
 
     esp_console_cmd_t cat_cmd = {
         .command = "cat",
@@ -447,11 +418,14 @@ void CmdFilesystem::registerCommands()
         .argtable = nullptr};
     ESP_ERROR_CHECK(esp_console_cmd_register(&cat_cmd));
 
+    tree_args.dirname = arg_str0(nullptr, nullptr, "<path>", "Directory to list (default: current directory)");
+    tree_args.end = arg_end(1);
+
     esp_console_cmd_t tree_cmd = {
         .command = "tree",
         .help = "List directory contents in a tree-like format",
         .hint = "[path]",
         .func = &cmdTree,
-        .argtable = nullptr};
+        .argtable = &tree_args};
     ESP_ERROR_CHECK(esp_console_cmd_register(&tree_cmd));
 }

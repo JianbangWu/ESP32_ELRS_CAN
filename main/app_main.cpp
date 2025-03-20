@@ -30,6 +30,8 @@ USER_CONSOLE *console_obj;
 
 extern "C" void app_main(void)
 {
+    std::chrono::time_point<std::chrono::steady_clock> origin_time = std::chrono::steady_clock::now();
+
     // 初始化默认事件循环
     esp_err_t ret = esp_event_loop_create_default();
     if (ret != ESP_OK)
@@ -53,37 +55,20 @@ extern "C" void app_main(void)
 
     QueueHandle_t twai_tx_queue = xQueueCreate(10, sizeof(twai_message_t));
     QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
-    TWAI_Device twai_obj(twai_tx_queue, twai_rx_queue);
+    TWAI_Device twai_obj(twai_tx_queue, twai_rx_queue, origin_time);
 
-    console_obj = new USER_CONSOLE(CmdFilesystem::_path_change, CmdFilesystem::current_path);
+    console_obj = new USER_CONSOLE(CmdFilesystem::_prompt_change_sem, CmdFilesystem::_current_path, WiFiComponent::_wifi_state);
 
-    LoggerBase wifi_key("/sdcard/wifi");
-
-    WiFiComponent wifi(wifi_event_group, wifi_key);
+    WiFiComponent wifi(CmdFilesystem::_prompt_change_sem, wifi_event_group);
     wifi.registerConsoleCommands();
-
     CmdSystem::registerSystem();
-
     CmdNVS::registerNVS();
-
     CmdFilesystem::registerCommands();
-
-    // 创建 LoggerBase 实例，挂载点为 "/sdcard/sensor_data"
-    // LoggerBase logger("/sdcard/sensor_data");
-
-    // 初始化日志文件，文件名为 "sensor_log.txt"
-    //     if (logger.init("sensor_log2.txt"))
-    //     {
-    // 记录日志信息
-    //         logger.log("Sensor 2: Humidity = 60%");
-    //         logger.log("Sensor 1: Temperature = 25.3C");
-    //     }
-    //     else
-    //     {
-    //         printf("Failed to initialize logger!\n");
-    //     }
     //
-    //     logger.shutdown();
+    //     auto current_time = std::chrono::steady_clock::now();
+    //     auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(current_time - origin_time).count();
+    //
+    //     ESP_LOGI("MAIN", "Boot = %lld", timestamp);
 
     while (1)
     {

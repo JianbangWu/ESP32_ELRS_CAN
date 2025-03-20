@@ -12,8 +12,6 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 
-#include "sd_card.hpp"
-
 namespace fs = std::filesystem;
 static const uint32_t StackSize = 1024 * 16;
 
@@ -21,7 +19,7 @@ void USER_CONSOLE::task()
 {
     while (true)
     {
-        if (xSemaphoreTake(_path_change, 0))
+        if (xSemaphoreTake(_prompt_change_sem, 0))
         {
             update_prompt();
         }
@@ -148,13 +146,17 @@ void USER_CONSOLE::initialize_console_library(std::string_view history_path)
 void USER_CONSOLE::update_prompt(void)
 {
     snprintf(prompt, CONSOLE_PROMPT_MAX_LEN - 1,
-             LOG_COLOR_I "%s " LOG_COLOR_V "%s" LOG_RESET_COLOR ":%s>", device_name.c_str(), device_state.c_str(), current_dir.c_str());
+             LOG_COLOR_I "%s " LOG_COLOR_V "%s" LOG_RESET_COLOR ":%s>", device_name.c_str(), _wifi_state.c_str(), _current_dir.c_str());
 }
 
-USER_CONSOLE::USER_CONSOLE(SemaphoreHandle_t &path_change, std::string &current_path) : _path_change(path_change), current_dir(current_path)
-{
+USER_CONSOLE::USER_CONSOLE(SemaphoreHandle_t &prompt_change,
+                           std::string &current_path,
+                           std::string &wifi_state) : _prompt_change_sem(prompt_change),
+                                                      _current_dir(current_path),
+                                                      _wifi_state(wifi_state)
 
-    if (path_change == nullptr)
+{
+    if (prompt_change == nullptr)
     {
         ESP_LOGE(TAG, "Invalid queue handle provided");
         return; // 或者抛出异常
@@ -206,16 +208,4 @@ USER_CONSOLE::~USER_CONSOLE()
         free(prompt);
     }
     esp_console_deinit();
-}
-
-void USER_CONSOLE::set_device_state(std::string_view dir)
-{
-    device_state = dir;
-    update_prompt();
-}
-
-void USER_CONSOLE::set_path(std::string_view path)
-{
-    current_dir = path;
-    update_prompt();
 }

@@ -28,13 +28,14 @@ void RTC::task(void)
         }
         if (xSemaphoreTake(_sntp_sem, pdMS_TO_TICKS(500)))
         {
-            time_t now;
-            struct tm timeinfo;
-            time(&now);
-            localtime_r(&now, &timeinfo);
-            set_time(&timeinfo);
+            std::time_t now = std::time(nullptr);
+            std::tm *time_info = std::localtime(&now);
+            set_time(time_info);
             reg.status.oscillator_is_stop = 0;
+            reg.control.close_oscillator = 0;
             set_status();
+            set_config();
+            ESP_LOGI(TAG, "%s", getTimestamp().c_str());
         }
     }
 }
@@ -82,6 +83,11 @@ RTC::RTC(SemaphoreHandle_t &sntp_sem,
     ESP_ERROR_CHECK(i2c_master_bus_add_device((bus_handle), &(dev_cfg), &(dev_handle)));
     init_io();
     get_config();
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+    set_time(&timeinfo);
     if (reg.status.oscillator_is_stop == 1)
     {
         ESP_LOGE(TAG, "RTC BAT Was Error!");
@@ -232,7 +238,6 @@ std::string RTC::getTimestamp()
     char buffer[bufferSize];
 
     size_t resultSize = std::strftime(buffer, bufferSize, "%Y-%m-%d-%H-%M-%S", get_time());
-
     // 将缓冲区内容转换为 std::string
     return std::string(buffer, resultSize);
 }

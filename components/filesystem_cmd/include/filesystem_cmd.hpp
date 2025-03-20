@@ -16,11 +16,50 @@ extern "C"
     {
     public:
         static void registerCommands();
-        static std::string current_path;
-        static SemaphoreHandle_t _path_change;
+        static std::string _current_path;
+
+        static SemaphoreHandle_t _prompt_change_sem;
 
     private:
         static char *TAG;
+
+        static struct
+        {
+            struct arg_str *dirname;
+            struct arg_end *end;
+        } ls_args;
+
+        static struct
+        {
+            struct arg_str *dirname;
+            struct arg_end *end;
+        } cd_args;
+
+        static struct
+        {
+            struct arg_str *dirname;
+            struct arg_end *end;
+        } mkdir_args;
+
+        static struct
+        {
+            struct arg_lit *recursive;
+            struct arg_lit *force;
+            struct arg_str *path;
+            struct arg_end *end;
+        } rm_args;
+
+        static struct
+        {
+            struct arg_str *filename;
+            struct arg_end *end;
+        } cat_args;
+
+        static struct
+        {
+            struct arg_str *dirname;
+            struct arg_end *end;
+        } tree_args;
 
         const std::string home_path{"/sdcard"};
         static std::string getFileType(const struct stat &st);

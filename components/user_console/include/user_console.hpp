@@ -17,7 +17,7 @@ extern "C"
     private:
         const char *TAG = "USER_CONSOLE";
 
-        SemaphoreHandle_t &_path_change;
+        SemaphoreHandle_t &_prompt_change_sem;
 
         const std::string nvs_mtp = "/data";
 
@@ -25,9 +25,9 @@ extern "C"
 
         const uint8_t CONSOLE_PROMPT_MAX_LEN = 64;
         char *prompt;
-        std::string &current_dir; // 当前工作目录
+        std::string &_current_dir; // 当前工作目录
         const std::string device_name{CONFIG_IDF_TARGET};
-        std::string device_state{""};
+        std::string &_wifi_state;
 
         void initialize_nvs();
         void initialize_filesystem();
@@ -38,7 +38,7 @@ extern "C"
         void update_prompt(void);
 
     public:
-        USER_CONSOLE(SemaphoreHandle_t &_path_change, std::string &current_path);
+        USER_CONSOLE(SemaphoreHandle_t &path_change, std::string &current_path, std::string &wifi_state);
         ~USER_CONSOLE();
 
         void set_device_state(std::string_view state);

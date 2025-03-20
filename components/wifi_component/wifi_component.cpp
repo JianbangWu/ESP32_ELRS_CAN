@@ -2,9 +2,9 @@
 #include "esp_log.h"
 #include "argtable3/argtable3.h"
 
-const char *WiFiComponent::TAG = "WiFiComponent";
+decltype(WiFiComponent::_wifi_state) WiFiComponent::_wifi_state{""};
 
-WiFiComponent::WiFiComponent(EventGroupHandle_t &wifi_event, LoggerBase &logger) : _wifi_event(wifi_event), _wifikey_logger(logger), initialized(false)
+WiFiComponent::WiFiComponent(SemaphoreHandle_t &prompt_change, EventGroupHandle_t &wifi_event) : initialized(false), _prompt_change_sem(prompt_change), _wifi_event(wifi_event), _wifikey_logger("/sdcard/wifi")
 {
 }
 
@@ -47,11 +47,19 @@ void WiFiComponent::eventHandler(void *arg, esp_event_base_t event_base, int32_t
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
         esp_wifi_connect();
-        xEventGroupClearBits(instance->_wifi_event, instance->CONNECTED_BIT);
+        xEventGroupClearBits(instance->_wifi_event, CONNECTED_BIT);
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
-        xEventGroupSetBits(instance->_wifi_event, instance->CONNECTED_BIT);
+        xEventGroupSetBits(instance->_wifi_event, CONNECTED_BIT);
+        _wifi_state = {"[WIFI]"};
+        xSemaphoreGive(instance->_prompt_change_sem);
+    }
+    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP)
+    {
+        xEventGroupClearBits(instance->_wifi_event, CONNECTED_BIT);
+        _wifi_state = {""};
+        xSemaphoreGive(instance->_prompt_change_sem);
     }
 }
 
@@ -67,16 +75,18 @@ bool WiFiComponent::connect(const std::string &ssid, const std::string &password
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     esp_err_t ret = esp_wifi_connect();
+
+    int bits = xEventGroupWaitBits(_wifi_event, CONNECTED_BIT, pdFALSE, pdTRUE, timeout_ms / portTICK_PERIOD_MS);
+
     if (ret == ESP_OK)
     {
         if (_wifikey_logger.init("wifi_key.txt"))
         {
-            _wifikey_logger.log(ssid + ":" + password);
+            const std::vector<std::string> string_group{ssid, password};
+            _wifikey_logger.log_string_group(string_group, ":");
             _wifikey_logger.shutdown();
         }
     }
-
-    int bits = xEventGroupWaitBits(_wifi_event, CONNECTED_BIT, pdFALSE, pdTRUE, timeout_ms / portTICK_PERIOD_MS);
 
     return (bits & CONNECTED_BIT) != 0;
 }
@@ -154,12 +164,12 @@ int WiFiComponent::connectCommand(void *context, int argc, char **argv)
 
     if (instance->connect(ssid, password, timeout_ms))
     {
-        ESP_LOGI(TAG, "Connected to WiFi");
+        ESP_LOGI(instance->TAG, "Connected to WiFi");
         return 0;
     }
     else
     {
-        ESP_LOGE(TAG, "Failed to connect to WiFi");
+        ESP_LOGE(instance->TAG, "Failed to connect to WiFi");
         return 1;
     }
 }
@@ -172,12 +182,12 @@ int WiFiComponent::disconnectCommand(void *context, int argc, char **argv)
 
     if (instance->disconnect())
     {
-        ESP_LOGI(TAG, "Disconnected from WiFi");
+        ESP_LOGI(instance->TAG, "Disconnected from WiFi");
         return 0;
     }
     else
     {
-        ESP_LOGE(TAG, "Failed to disconnect from WiFi");
+        ESP_LOGE(instance->TAG, "Failed to disconnect from WiFi");
         return 1;
     }
 }

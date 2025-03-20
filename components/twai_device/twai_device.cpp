@@ -1,6 +1,17 @@
 #include "twai_device.hpp"
 #include "inttypes.h"
 
+#include <ctime>
+#include <time.h>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+#include <vector>
+#include <string>
+#include <chrono>
+
+#include "logger.hpp"
+
 static const uint32_t StackSize = 1024 * 5;
 
 // 后台任务:处理发送消息
@@ -21,6 +32,7 @@ void TWAI_Device::tx_task(void *arg)
 void TWAI_Device::rx_task(void *arg)
 {
     TWAI_Device *device = static_cast<TWAI_Device *>(arg);
+
     twai_message_t message;
 
     while (true)
@@ -28,30 +40,112 @@ void TWAI_Device::rx_task(void *arg)
         if (twai_receive(&message, portMAX_DELAY) == ESP_OK)
         {
             // 打印接收到的消息
-            ESP_LOGI("TWAI_RX", "Received message: ID=0x%" PRIu32 ", DLC=%d, Data=[%02x, %02x, %02x, %02x, %02x, %02x, %02x, %02x]",
-                     message.identifier, message.data_length_code,
-                     message.data[0], message.data[1], message.data[2], message.data[3],
-                     message.data[4], message.data[5], message.data[6], message.data[7]);
+            printf("TWAI_RX:Received message: ID=0x%08" PRIu32 ", DLC=%2d, Data=[%02x, %02x, %02x, %02x, %02x, %02x, %02x, %02x]\r",
+                   message.identifier, message.data_length_code,
+                   message.data[0], message.data[1], message.data[2], message.data[3],
+                   message.data[4], message.data[5], message.data[6], message.data[7]);
 
             // 将消息放入接收队列
-            // xQueueSend(device->_rx_queue, &message, portMAX_DELAY);
+            xQueueSend(device->_rx_queue, &message, portMAX_DELAY);
         }
     }
+}
+
+void TWAI_Device::rx_log(void *arg)
+{
+    TWAI_Device *device = static_cast<TWAI_Device *>(arg);
+    twai_message_t message;
+
+    while (true)
+    {
+        if (xQueueReceive(device->_rx_queue, &message, pdMS_TO_TICKS(2000)))
+        {
+
+            std::chrono::time_point<std::chrono::steady_clock> msg_time = std::chrono::steady_clock::now();
+
+            std::time_t now = std::time(nullptr);
+
+            if (false == device->_twai_logger.get_init_state())
+            {
+                device->_twai_logger.init(device->get_timestamp(now) + ".asc");
+            }
+
+            device->_twai_logger.log(device->format_asc(1, message.identifier, "Rx", message.data_length_code, &message.data[0]), 1000);
+        }
+        else
+        {
+            if (true == device->_twai_logger.get_init_state())
+            {
+                device->_twai_logger.shutdown();
+                ESP_LOGI(device->TAG, "Bus Timeout, Shutdown File");
+            }
+        }
+    }
+}
+
+std::string TWAI_Device::format_asc(int channel, uint32_t canId, const std::string &direction, int dataLength, const uint8_t *data)
+{
+    auto current_time = std::chrono::steady_clock::now();
+
+    auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(current_time - _origin_time).count();
+
+    std::ostringstream oss;
+
+    // Format timestamp (6 decimal places)
+    oss << std::fixed << std::setprecision(6) << timestamp << " ";
+
+    // Format channel
+    oss << channel << " ";
+
+    // Format CAN ID (8-digit hex with 'x' suffix)
+    oss << std::hex << std::setw(8) << std::setfill('0') << canId << "x ";
+
+    // Format direction and data length
+    oss << direction << " d " << std::dec << dataLength << " ";
+
+    for (int i = 0; i < dataLength; ++i)
+    {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(data[i]) << " ";
+    }
+
+    // Remove the trailing space and return the formatted string
+    std::string result = oss.str();
+    if (!result.empty() && result.back() == ' ')
+    {
+        result.pop_back(); // Remove the last space
+    }
+
+    return result;
+}
+
+std::string TWAI_Device::get_timestamp(std::time_t &time)
+{
+    const size_t bufferSize = 64;
+    char buffer[bufferSize];
+
+    std::strftime(buffer, bufferSize, "%Y_%m_%d-%H_%M_%S", std::localtime(&time));
+
+    return std::string(buffer);
 }
 
 // 构造函数:初始化TWAI设备
 TWAI_Device::TWAI_Device(QueueHandle_t &tx_queue,
                          QueueHandle_t &rx_queue,
-                         gpio_num_t tx_gpio_num, gpio_num_t rx_gpio_num, gpio_num_t std_gpio_num,
+                         std::chrono::time_point<std::chrono::steady_clock> &origin_time,
+                         gpio_num_t tx_gpio_num,
+                         gpio_num_t rx_gpio_num,
+                         gpio_num_t std_gpio_num,
                          twai_timing_config_t timing_config,
                          twai_filter_config_t filter_config)
-    : _tx_gpio_num(tx_gpio_num),
+    : _origin_time(origin_time),
+      _tx_gpio_num(tx_gpio_num),
       _rx_gpio_num(rx_gpio_num),
       _std_gpio_num(std_gpio_num),
       _timing_config(timing_config),
       _filter_config(filter_config),
       _tx_queue(tx_queue),
-      _rx_queue(rx_queue)
+      _rx_queue(rx_queue),
+      _twai_logger("/sdcard/twai")
 {
     init();
     init_io();
@@ -92,6 +186,7 @@ void TWAI_Device::init()
     // 创建后台任务
     xTaskCreatePinnedToCore(&TWAI_Device::tx_task, "TWAI_TX", StackSize, this, 1, nullptr, tskNO_AFFINITY);
     xTaskCreatePinnedToCore(&TWAI_Device::rx_task, "TWAI_RX", StackSize, this, 1, nullptr, tskNO_AFFINITY);
+    xTaskCreatePinnedToCore(&TWAI_Device::rx_log, "rx_logger", StackSize, this, 1, nullptr, tskNO_AFFINITY);
 }
 
 // 清理TWAI驱动和资源

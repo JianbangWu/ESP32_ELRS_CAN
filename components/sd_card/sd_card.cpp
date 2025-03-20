@@ -25,8 +25,9 @@ void SDCard::card_detect()
 {
     while (1)
     {
-        if (xSemaphoreTake(det_sem, pdMS_TO_TICKS(100)))
+        if (xSemaphoreTake(det_sem, pdMS_TO_TICKS(300)))
         {
+            vTaskDelay(pdMS_TO_TICKS(200));
             if (gpio_get_level(_det_pin) == 1)
             {
                 ESP_LOGI(TAG, "SD Card is Plug-In!");

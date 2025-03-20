@@ -10,6 +10,10 @@
 
 static const char *TAG = "CmdSystem";
 
+decltype(CmdSystem::log_level_args) CmdSystem::log_level_args;
+decltype(CmdSystem::deep_sleep_args) CmdSystem::deep_sleep_args;
+decltype(CmdSystem::light_sleep_args) CmdSystem::light_sleep_args;
+
 void CmdSystem::registerSystem()
 {
     registerSystemCommon();
@@ -37,16 +41,6 @@ void CmdSystem::registerSystemCommon()
 
 void CmdSystem::registerSystemDeepSleep()
 {
-    static struct
-    {
-        struct arg_int *wakeup_time;
-#if SOC_PM_SUPPORT_EXT0_WAKEUP || SOC_PM_SUPPORT_EXT1_WAKEUP
-        struct arg_int *wakeup_gpio_num;
-        struct arg_int *wakeup_gpio_level;
-#endif
-        struct arg_end *end;
-    } deep_sleep_args;
-
     int num_args = 1;
     deep_sleep_args.wakeup_time = arg_int0("t", "time", "<t>", "Wake up time, ms");
 #if SOC_PM_SUPPORT_EXT0_WAKEUP || SOC_PM_SUPPORT_EXT1_WAKEUP
@@ -73,14 +67,6 @@ void CmdSystem::registerSystemDeepSleep()
 
 void CmdSystem::registerSystemLightSleep()
 {
-    static struct
-    {
-        struct arg_int *wakeup_time;
-        struct arg_int *wakeup_gpio_num;
-        struct arg_int *wakeup_gpio_level;
-        struct arg_end *end;
-    } light_sleep_args;
-
     light_sleep_args.wakeup_time = arg_int0("t", "time", "<t>", "Wake up time, ms");
     light_sleep_args.wakeup_gpio_num = arg_intn(NULL, "io", "<n>", 0, 8, "If specified, wakeup using GPIO with given number");
     light_sleep_args.wakeup_gpio_level = arg_intn(NULL, "io_level", "<0|1>", 0, 8, "GPIO level to trigger wakeup");
@@ -303,13 +289,6 @@ int CmdSystem::logLevel(int argc, char **argv)
 
 void CmdSystem::registerLogLevel()
 {
-    static struct
-    {
-        struct arg_str *tag;
-        struct arg_str *level;
-        struct arg_end *end;
-    } log_level_args;
-
     log_level_args.tag = arg_str1(NULL, NULL, "<tag|*>", "Log tag to set the level for, or * to set for all tags");
     log_level_args.level = arg_str1(NULL, NULL, "<none|error|warn|debug|verbose>", "Log level to set. Abbreviated words are accepted.");
     log_level_args.end = arg_end(2);
@@ -385,15 +364,6 @@ int CmdSystem::deepSleep(int argc, char **argv)
 
 void CmdSystem::registerDeepSleep()
 {
-    static struct
-    {
-        struct arg_int *wakeup_time;
-#if SOC_PM_SUPPORT_EXT0_WAKEUP || SOC_PM_SUPPORT_EXT1_WAKEUP
-        struct arg_int *wakeup_gpio_num;
-        struct arg_int *wakeup_gpio_level;
-#endif
-        struct arg_end *end;
-    } deep_sleep_args;
 
     int num_args = 1;
     deep_sleep_args.wakeup_time = arg_int0("t", "time", "<t>", "Wake up time, ms");
@@ -501,14 +471,6 @@ int CmdSystem::lightSleep(int argc, char **argv)
 
 void CmdSystem::registerLightSleep()
 {
-    static struct
-    {
-        struct arg_int *wakeup_time;
-        struct arg_int *wakeup_gpio_num;
-        struct arg_int *wakeup_gpio_level;
-        struct arg_end *end;
-    } light_sleep_args;
-
     light_sleep_args.wakeup_time = arg_int0("t", "time", "<t>", "Wake up time, ms");
     light_sleep_args.wakeup_gpio_num = arg_intn(NULL, "io", "<n>", 0, 8, "If specified, wakeup using GPIO with given number");
     light_sleep_args.wakeup_gpio_level = arg_intn(NULL, "io_level", "<0|1>", 0, 8, "GPIO level to trigger wakeup");

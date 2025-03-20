@@ -21,16 +21,17 @@ extern "C"
         static constexpr const char *TAG = "SNTPManager";
 
         SemaphoreHandle_t &_sntp_sem;
+
         EventGroupHandle_t &_wifi_event;
 
-        bool now_syn_yet = 1;
+        bool _has_finish_sntp;
 
         void task();
 
-        static void start_sntp_service(const char *ntp_server);
+        void start_sntp_service(const char *ntp_server);
 
         // 命令行参数结构体
-        static struct NtpArgs
+        static struct
         {
             struct arg_str *server;
             struct arg_end *end;
@@ -40,7 +41,7 @@ extern "C"
         void register_ntp_command();
 
         // 命令行命令处理函数
-        static int start_ntp_command_handler(int argc, char **argv);
+        static int start_ntp_command_handler(void *context, int argc, char **argv);
     };
 
 #ifdef __cplusplus

@@ -22,6 +22,31 @@ extern "C"
         static void registerSystemDeepSleep();
         static void registerSystemLightSleep();
 
+        static struct
+        {
+            struct arg_str *tag;
+            struct arg_str *level;
+            struct arg_end *end;
+        } log_level_args;
+
+        static struct
+        {
+            struct arg_int *wakeup_time;
+#if SOC_PM_SUPPORT_EXT0_WAKEUP || SOC_PM_SUPPORT_EXT1_WAKEUP
+            struct arg_int *wakeup_gpio_num;
+            struct arg_int *wakeup_gpio_level;
+#endif
+            struct arg_end *end;
+        } deep_sleep_args;
+
+        static struct
+        {
+            struct arg_int *wakeup_time;
+            struct arg_int *wakeup_gpio_num;
+            struct arg_int *wakeup_gpio_level;
+            struct arg_end *end;
+        } light_sleep_args;
+
         static int getVersion(int argc, char **argv);
         static int restart(int argc, char **argv);
         static int freeMem(int argc, char **argv);
