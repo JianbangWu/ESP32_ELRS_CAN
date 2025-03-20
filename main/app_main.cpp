@@ -30,6 +30,10 @@ USER_CONSOLE *console_obj;
 
 extern "C" void app_main(void)
 {
+
+    setenv("TZ", "CST-8", 1);
+    tzset();
+
     std::chrono::time_point<std::chrono::steady_clock> origin_time = std::chrono::steady_clock::now();
 
     // 初始化默认事件循环
@@ -45,7 +49,8 @@ extern "C" void app_main(void)
     SemaphoreHandle_t sntp_sem = xSemaphoreCreateBinary();
     SNTPManager sntp_obj(sntp_sem, wifi_event_group);
     RTC ds3231_obj(sntp_sem);
-    ESP_LOGI("RTC_IMTE", "%s", ds3231_obj.getTimestamp().c_str());
+
+    printf("\033[92;45m RTC_IMTE: CST-8:=%s \033[0m \r\n", ds3231_obj.getTimestamp().c_str());
 
     SDCard sd_obj;
     ELRS elrs_obj;

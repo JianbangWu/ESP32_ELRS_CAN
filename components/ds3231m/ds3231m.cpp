@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <cstring>
+#include <sys/time.h>
 #include <time.h>
 
 #include "esp_log.h"
@@ -28,14 +29,11 @@ void RTC::task(void)
         }
         if (xSemaphoreTake(_sntp_sem, pdMS_TO_TICKS(500)))
         {
-            std::time_t now = std::time(nullptr);
-            std::tm *time_info = std::localtime(&now);
-            set_time(time_info);
-            reg.status.oscillator_is_stop = 0;
-            reg.control.close_oscillator = 0;
-            set_status();
-            set_config();
-            ESP_LOGI(TAG, "%s", getTimestamp().c_str());
+            std::time_t sys_now = std::time(nullptr);
+            std::tm *time_utc0 = gmtime(&sys_now);
+            reset();
+            set_time(time_utc0);
+            ESP_LOGI(TAG, "UTC0:=%s", getTimestamp().c_str());
         }
     }
 }
@@ -83,15 +81,35 @@ RTC::RTC(SemaphoreHandle_t &sntp_sem,
     ESP_ERROR_CHECK(i2c_master_bus_add_device((bus_handle), &(dev_cfg), &(dev_handle)));
     init_io();
     get_config();
-    time_t now;
-    struct tm timeinfo;
-    time(&now);
-    localtime_r(&now, &timeinfo);
-    set_time(&timeinfo);
+
     if (reg.status.oscillator_is_stop == 1)
     {
         ESP_LOGE(TAG, "RTC BAT Was Error!");
         ESP_LOGE(TAG, "Time Need Calibrate!");
+    }
+    else
+    {
+        setenv("TZ", "UTC0", 1);
+        tzset();
+
+        tm *rtc_read_utc0 = get_time();
+        time_t timep_utc0 = mktime(rtc_read_utc0);
+
+        struct timeval tv;
+        tv.tv_sec = timep_utc0; // 设置秒数
+        tv.tv_usec = 0;         // 微秒设为 0
+
+        if (settimeofday(&tv, NULL) == 0)
+        {
+            ESP_LOGI(TAG, "System RTC updated successfully!");
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to update system RTC!");
+        }
+
+        setenv("TZ", "CST-8", 1);
+        tzset();
     }
 }
 
@@ -99,7 +117,7 @@ RTC::~RTC()
 {
     ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev_handle));
     ESP_ERROR_CHECK(i2c_del_master_bus(bus_handle));
-    printf("I2C Bus Is Free! \r\n");
+    ESP_LOGE(TAG, "I2C Bus Is Free!");
 }
 
 void RTC::init_io(void)
@@ -113,6 +131,7 @@ void RTC::init_io(void)
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
+    gpio_set_level(_rst_io_pin, 1);
 
     /* INT PIN */
     io_conf.intr_type = GPIO_INTR_NEGEDGE;
@@ -148,21 +167,22 @@ void RTC::get_temperature(void)
     uint8_t temp_add = REG_TEMPERATURE_H;
     uint8_t temp_buff[2] = {0};
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &temp_add, 1, temp_buff, 2, -1));
-    temperature = (temp_buff[0] >> 7 == 1 ? -1 : 1) * (((temp_buff[0] & 0x7F) << 2) | (temp_buff[1] >> 6)) * 0.25;
+    temperature = ((int8_t)temp_buff[0]) + (temp_buff[1] >> 6) * 0.25;
 }
 
 struct tm *RTC::get_time(void)
 {
     uint8_t temp_add = REG_SECONDS;
     uint8_t temp_buff[7] = {0};
+
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &temp_add, 1, temp_buff, sizeof(temp_buff), -1));
-    now_time.tm_sec = temp_buff[0];
-    now_time.tm_min = temp_buff[1];
-    now_time.tm_hour = temp_buff[2];
-    now_time.tm_wday = temp_buff[3];
-    now_time.tm_mday = temp_buff[4];
-    now_time.tm_mon = temp_buff[5];
-    now_time.tm_year = temp_buff[6];
+
+    now_time.tm_sec = bcd_to_dec(temp_buff[0]);
+    now_time.tm_min = bcd_to_dec(temp_buff[1]);
+    now_time.tm_hour = bcd_to_dec(temp_buff[2]);
+    now_time.tm_mday = bcd_to_dec(temp_buff[4]);
+    now_time.tm_mon = bcd_to_dec(temp_buff[5]) - 1;
+    now_time.tm_year = bcd_to_dec(temp_buff[6]) + 100;
 
     return &now_time;
 }
@@ -203,20 +223,19 @@ void RTC::set_status(void)
 void RTC::set_time(tm *new_time)
 {
     uint8_t temp_add = REG_SECONDS;
-    uint8_t temp_buff[7] = {0};
+    uint8_t temp_buff[7] = {
+        dec_to_bcd(new_time->tm_sec),
+        dec_to_bcd(new_time->tm_min),
+        dec_to_bcd(new_time->tm_hour),
+        0,
+        dec_to_bcd(new_time->tm_mday),
+        dec_to_bcd(new_time->tm_mon + 1),
+        dec_to_bcd(new_time->tm_year - 100)};
 
     i2c_master_transmit_multi_buffer_info_t multi_buff[2] = {
         {.write_buffer = &temp_add, .buffer_size = sizeof(temp_add)},
         {.write_buffer = temp_buff, .buffer_size = sizeof(temp_buff)},
     };
-
-    temp_buff[0] = new_time->tm_sec;
-    temp_buff[1] = new_time->tm_min;
-    temp_buff[2] = new_time->tm_hour;
-    temp_buff[3] = new_time->tm_wday;
-    temp_buff[4] = new_time->tm_mday;
-    temp_buff[5] = new_time->tm_mon;
-    temp_buff[6] = new_time->tm_year;
 
     ESP_ERROR_CHECK(i2c_master_multi_buffer_transmit(dev_handle, multi_buff, sizeof(multi_buff) / sizeof(i2c_master_transmit_multi_buffer_info_t), -1));
 

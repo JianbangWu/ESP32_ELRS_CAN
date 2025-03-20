@@ -61,16 +61,14 @@ void TWAI_Device::rx_log(void *arg)
         if (xQueueReceive(device->_rx_queue, &message, pdMS_TO_TICKS(2000)))
         {
 
-            std::chrono::time_point<std::chrono::steady_clock> msg_time = std::chrono::steady_clock::now();
-
             std::time_t now = std::time(nullptr);
 
             if (false == device->_twai_logger.get_init_state())
             {
-                device->_twai_logger.init(device->get_timestamp(now) + ".asc");
+                device->_twai_logger.init(device->get_date(now) + "/" + device->get_timestamp(now) + ".asc");
             }
 
-            device->_twai_logger.log(device->format_asc(1, message.identifier, "Rx", message.data_length_code, &message.data[0]), 1000);
+            device->_twai_logger.log(device->format_asc(1, message.identifier, "Rx", message.data_length_code, &message.data[0]), 50000);
         }
         else
         {
@@ -89,10 +87,13 @@ std::string TWAI_Device::format_asc(int channel, uint32_t canId, const std::stri
 
     auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(current_time - _origin_time).count();
 
+    // 将微秒转换为秒
+    double timestamp_seconds = static_cast<double>(timestamp) / 1'000'000.0;
+
     std::ostringstream oss;
 
     // Format timestamp (6 decimal places)
-    oss << std::fixed << std::setprecision(6) << timestamp << " ";
+    oss << std::fixed << std::setprecision(6) << timestamp_seconds << " ";
 
     // Format channel
     oss << channel << " ";
@@ -124,6 +125,16 @@ std::string TWAI_Device::get_timestamp(std::time_t &time)
     char buffer[bufferSize];
 
     std::strftime(buffer, bufferSize, "%Y_%m_%d-%H_%M_%S", std::localtime(&time));
+
+    return std::string(buffer);
+}
+
+std::string TWAI_Device::get_date(std::time_t &time)
+{
+    const size_t bufferSize = 64;
+    char buffer[bufferSize];
+
+    std::strftime(buffer, bufferSize, "%m-%d", std::localtime(&time));
 
     return std::string(buffer);
 }

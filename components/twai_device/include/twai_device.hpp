@@ -73,6 +73,8 @@ extern "C"
 
         std::string get_timestamp(std::time_t &time);
 
+        std::string get_date(std::time_t &time);
+
         gpio_num_t &_tx_gpio_num;             // TX引脚
         gpio_num_t &_rx_gpio_num;             // RX引脚
         gpio_num_t &_std_gpio_num;            // RX引脚

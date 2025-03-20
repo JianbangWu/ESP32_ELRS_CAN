@@ -46,19 +46,14 @@ void WiFiComponent::eventHandler(void *arg, esp_event_base_t event_base, int32_t
     WiFiComponent *instance = static_cast<WiFiComponent *>(arg);
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
-        esp_wifi_connect();
         xEventGroupClearBits(instance->_wifi_event, CONNECTED_BIT);
+        _wifi_state = {""};
+        xSemaphoreGive(instance->_prompt_change_sem);
     }
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
         xEventGroupSetBits(instance->_wifi_event, CONNECTED_BIT);
         _wifi_state = {"[WIFI]"};
-        xSemaphoreGive(instance->_prompt_change_sem);
-    }
-    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP)
-    {
-        xEventGroupClearBits(instance->_wifi_event, CONNECTED_BIT);
-        _wifi_state = {""};
         xSemaphoreGive(instance->_prompt_change_sem);
     }
 }

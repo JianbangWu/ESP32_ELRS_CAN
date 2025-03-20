@@ -75,6 +75,8 @@ extern "C"
 
         static int removeDirectory(const char *path);
         static void printTree(const std::string &path, const std::string &prefix);
+
+        static std::string removePrefixIfExists(const std::string &str, const char *prefix);
     };
 
 #ifdef __cplusplus

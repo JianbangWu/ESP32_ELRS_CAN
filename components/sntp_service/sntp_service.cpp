@@ -123,7 +123,6 @@ void SNTPManager::start_sntp_service(const char *ntp_server)
 
     // 初始化并启动 SNTP 服务
     esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(ntp_server);
-    config.smooth_sync = true;
 
     config.sync_cb = [](struct timeval *tv)
     {
@@ -165,7 +164,7 @@ void SNTPManager::start_sntp_service(const char *ntp_server)
     }
 
     std::strftime(buffer, bufferSize, "%Y-%m-%d-%H-%M-%S", &timeinfo);
-    ESP_LOGI("SYS_TIME", "%s", buffer);
+    ESP_LOGI(TAG, "UTC8:=%s", buffer);
 
 FAIL:
     esp_netif_sntp_deinit();

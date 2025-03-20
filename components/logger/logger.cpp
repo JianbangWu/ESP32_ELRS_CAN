@@ -1,28 +1,21 @@
 #include "logger.hpp"
-#include <cstdio>
-#include <ctime>
+
+#include <filesystem>
+#include <iostream>
 #include <iomanip>
 #include <sstream>
-#include "esp_log.h"
+#include <cstring>
+#include <cstdio>
+#include <ctime>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include "esp_log.h"
 
 // 构造函数
 LoggerBase::LoggerBase(const std::string &mount_point)
-    : mount_point(mount_point), file(nullptr), is_initialized(false), line_count(0)
+    : _mount_full_path(mount_point), file(nullptr), is_initialized(false), line_count(0)
 {
-    /* 检查目录是否存在 */
-    struct stat st;
-    if (0 != stat(mount_point.c_str(), &st))
-    {
-        ESP_LOGI(TAG, "Path not Exist");
-        ESP_LOGI(TAG, "Creating Mount Path");
-        if (mkdir(mount_point.c_str(), 0755) != 0)
-        {
-            ESP_LOGE(TAG, "Failed to create directory: %s", mount_point.c_str());
-        }
-    }
 }
 
 // 析构函数
@@ -35,19 +28,39 @@ LoggerBase::~LoggerBase()
     }
 }
 
+void LoggerBase::create_dir_recursive(const std::string &path)
+{
+    std::filesystem::path dirPath = std::filesystem::path(path).parent_path(); // 获取父目录
+    if (dirPath.empty())
+        return; // 避免空路径情况
+
+    std::error_code ec;
+    if (std::filesystem::create_directories(dirPath, ec))
+    {
+        std::cout << "Created directory: " << dirPath << std::endl;
+    }
+    else if (ec)
+    {
+        std::cerr << "Failed to create directory: " << dirPath
+                  << " (Error: " << ec.message() << ")\n";
+    }
+}
+
 // 初始化日志文件
 bool LoggerBase::init(const std::string &file_name)
 {
-    current_file_path = mount_point + "/" + file_name;
+    _current_file_path = _mount_full_path + "/" + file_name;
 
-    getFileExtension(file_name);
+    create_dir_recursive(_current_file_path);
 
-    ESP_LOGI(TAG, "filepath:=%s", current_file_path.c_str());
+    getFileExtension(_current_file_path);
+
+    ESP_LOGI(TAG, "filepath:=%s", _current_file_path.c_str());
 
     // 读取当前文件的行数
-    line_count = read_line_count(current_file_path);
+    line_count = read_line_count(_current_file_path);
 
-    if (!open_file(current_file_path))
+    if (!open_file(_current_file_path))
     {
         return false;
     }
@@ -57,7 +70,7 @@ bool LoggerBase::init(const std::string &file_name)
     if (line_count == 0)
     {
         std::string header;
-        if (std::string::npos == file_name.find(".asc"))
+        if (_file_extention == ".asc")
         {
             header = generate_file_header_asc();
         }
@@ -85,10 +98,11 @@ std::string LoggerBase::generate_file_header_asc()
     time_file_created = std::chrono::steady_clock::now();
 
     char buf[100];
-    std::chrono::time_point<std::chrono::system_clock> file_header_time;
-    std::time_t start_time_t = std::chrono::system_clock::to_time_t(file_header_time);
 
-    std::strftime(buf, sizeof(buf), "%Y/%m/%d %H:%M:%S", std::localtime(&start_time_t));
+    std::time_t t = std::time(nullptr);
+
+    std::strftime(buf, sizeof(buf), "%Y/%m/%d %H:%M:%S", std::localtime(&t));
+
     std::ostringstream oss;
     oss << "date " << buf << ".471" << std::endl;
     oss << "base hex timestamps absolute" << std::endl;
@@ -186,7 +200,7 @@ bool LoggerBase::is_string_group_exists(const std::vector<std::string> &string_g
         }
     }
 
-    FILE *temp_file = fopen(current_file_path.c_str(), "r");
+    FILE *temp_file = fopen(_current_file_path.c_str(), "r");
     if (!temp_file)
     {
         printf("Failed to open file for reading.\n");

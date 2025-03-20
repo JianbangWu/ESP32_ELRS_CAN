@@ -15,10 +15,12 @@ extern "C"
     {
     public:
         // 构造函数，传入挂载点路径
-        explicit LoggerBase(const std::string &mount_point);
+        explicit LoggerBase(const std::string &_mount_full_path);
 
         // 析构函数
         virtual ~LoggerBase();
+
+        void create_dir_recursive(const std::string &full_file_path);
 
         // 初始化日志文件
         bool init(const std::string &file_name);
@@ -64,12 +66,12 @@ extern "C"
         int read_line_count(const std::string &file_path);
 
     private:
-        std::string mount_point;                                              // 挂载点路径
+        std::string _mount_full_path;                                         // 挂载点路径
         FILE *file;                                                           // 文件指针
         std::string _file_extention;                                          // 文件后缀名
         bool is_initialized;                                                  // 是否已初始化
         int line_count;                                                       // 当前文件的行数
-        std::string current_file_path;                                        // 当前文件完整地址
+        std::string _current_file_path;                                       // 当前文件完整地址
         std::chrono::time_point<std::chrono::steady_clock> time_file_created; // 文件创建时间
     };
 

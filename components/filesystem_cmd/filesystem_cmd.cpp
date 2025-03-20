@@ -256,7 +256,7 @@ int CmdFilesystem::cmdCat(int argc, char **argv)
         return 1;
     }
 
-    std::string path = joinPath(_current_path, cat_args.filename->sval[0]);
+    std::string path = joinPath(_current_path, removePrefixIfExists(cat_args.filename->sval[0], MOUNT_POINT));
 
     FILE *file = fopen(path.c_str(), "r");
     if (!file)
@@ -332,6 +332,17 @@ void CmdFilesystem::printTree(const std::string &path, const std::string &prefix
             printTree(full_path, prefix + (i == entries.size() - 1 ? "    " : "│   "));
         }
     }
+}
+
+std::string CmdFilesystem::removePrefixIfExists(const std::string &str, const char *prefix)
+{
+    size_t prefix_len = std::strlen(prefix);
+
+    if (str.starts_with(prefix))
+    {
+        return str.substr(prefix_len);
+    }
+    return str;
 }
 
 int CmdFilesystem::cmdTree(int argc, char **argv)
