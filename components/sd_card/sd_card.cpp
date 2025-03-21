@@ -140,7 +140,7 @@ void SDCard::mount_sd(void)
 
     ESP_LOGI(TAG, "SD Card mounted at: %s", mt.c_str());
 
-    sdmmc_card_print_info(stdout, card);
+    // sdmmc_card_print_info(stdout, card);
 
     struct stat st;
     if (stat("/sdcard", &st) != 0)

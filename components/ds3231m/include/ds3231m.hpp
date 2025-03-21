@@ -113,7 +113,8 @@ extern "C"
 
         void set_time(tm *new_time);
 
-        std::string getTimestamp();
+        std::string get_utc0_time();
+        std::string get_cst8_time();
     };
 
 #ifdef __cplusplus

@@ -9,6 +9,9 @@
 #include "esp_system.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "esp_vfs_dev.h"
+#include "esp_vfs_cdcacm.h"
+#include "esp_vfs_console.h"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 
@@ -100,9 +103,24 @@ void USER_CONSOLE::initialize_console_peripheral()
     fflush(stdout);
     fsync(fileno(stdout));
 
+#if defined(CONFIG_ESP_CONSOLE_USB_CDC)
+    /* Minicom, screen, idf_monitor send CR when ENTER key is pressed */
+    esp_vfs_dev_cdcacm_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
+    /* Move the caret to the beginning of the next line on '\n' */
+    esp_vfs_dev_cdcacm_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
+
+    /* Enable blocking mode on stdin and stdout */
+    fcntl(fileno(stdout), F_SETFL, 0);
+    fcntl(fileno(stdin), F_SETFL, 0);
+
+#elif defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG)
+
+    /* Minicom, screen, idf_monitor send CR when ENTER key is pressed */
     usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
+    /* Move the caret to the beginning of the next line on '\n' */
     usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
 
+    /* Enable blocking mode on stdin and stdout */
     fcntl(fileno(stdout), F_SETFL, 0);
     fcntl(fileno(stdin), F_SETFL, 0);
 
@@ -111,8 +129,14 @@ void USER_CONSOLE::initialize_console_peripheral()
         .rx_buffer_size = 256,
     };
 
+    /* Install USB-SERIAL-JTAG driver for interrupt-driven reads and writes */
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&jtag_config));
+
+    /* Tell vfs to use usb-serial-jtag driver */
     usb_serial_jtag_vfs_use_driver();
+#else
+#error Unsupported console type
+#endif
     setvbuf(stdin, nullptr, _IONBF, 0);
 }
 

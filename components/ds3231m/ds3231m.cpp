@@ -33,7 +33,7 @@ void RTC::task(void)
             std::tm *time_utc0 = gmtime(&sys_now);
             reset();
             set_time(time_utc0);
-            ESP_LOGI(TAG, "UTC0:=%s", getTimestamp().c_str());
+            ESP_LOGI(TAG, "UTC0:=%s", get_utc0_time().c_str());
         }
     }
 }
@@ -251,12 +251,25 @@ void RTC::reset(void)
     ESP_LOGI(TAG, "reset");
 }
 
-std::string RTC::getTimestamp()
+std::string RTC::get_utc0_time()
 {
     const size_t bufferSize = 64;
     char buffer[bufferSize];
 
     size_t resultSize = std::strftime(buffer, bufferSize, "%Y-%m-%d-%H-%M-%S", get_time());
+    // 将缓冲区内容转换为 std::string
+    return std::string(buffer, resultSize);
+}
+
+std::string RTC::get_cst8_time()
+{
+    const size_t bufferSize = 64;
+    char buffer[bufferSize];
+    struct tm *utc0 = get_time();
+    time_t utc_time_t = mktime(utc0);
+    struct tm *local_time = localtime(&utc_time_t);
+
+    size_t resultSize = std::strftime(buffer, bufferSize, "%Y-%m-%d-%H-%M-%S", local_time);
     // 将缓冲区内容转换为 std::string
     return std::string(buffer, resultSize);
 }

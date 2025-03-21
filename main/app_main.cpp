@@ -44,23 +44,23 @@ extern "C" void app_main(void)
         return;
     }
 
+    QueueHandle_t twai_tx_queue = xQueueCreate(10, sizeof(twai_message_t));
+    QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
+    TWAI_Device twai_obj(twai_tx_queue, twai_rx_queue, origin_time);
+
     EventGroupHandle_t wifi_event_group = xEventGroupCreate();
 
     SemaphoreHandle_t sntp_sem = xSemaphoreCreateBinary();
     SNTPManager sntp_obj(sntp_sem, wifi_event_group);
     RTC ds3231_obj(sntp_sem);
 
-    printf("\033[92;45m RTC_IMTE: CST-8:=%s \033[0m \r\n", ds3231_obj.getTimestamp().c_str());
+    printf("\033[92;45m RTC_IMTE: CST-8:=%s \033[0m \r\n", ds3231_obj.get_cst8_time().c_str());
 
     SDCard sd_obj;
     ELRS elrs_obj;
 
     QueueHandle_t beep_queue = xQueueCreate(5, sizeof(BeeperMessage));
     Buzzer buzzer_obj(beep_queue);
-
-    QueueHandle_t twai_tx_queue = xQueueCreate(10, sizeof(twai_message_t));
-    QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
-    TWAI_Device twai_obj(twai_tx_queue, twai_rx_queue, origin_time);
 
     console_obj = new USER_CONSOLE(CmdFilesystem::_prompt_change_sem, CmdFilesystem::_current_path, WiFiComponent::_wifi_state);
 
