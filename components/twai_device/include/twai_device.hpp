@@ -23,7 +23,8 @@ extern "C"
     {
     public:
         // 构造函数:初始化TWAI设备
-        TWAI_Device(QueueHandle_t &tx_queue,
+        TWAI_Device(QueueHandle_t &beep_queue,
+                    QueueHandle_t &tx_queue,
                     QueueHandle_t &rx_queue,
                     std::chrono::time_point<std::chrono::steady_clock> &origin_time,
                     gpio_num_t tx_gpio_num = GPIO_NUM_5,
@@ -80,6 +81,7 @@ extern "C"
         gpio_num_t &_std_gpio_num;            // RX引脚
         twai_timing_config_t &_timing_config; // TWAI时序配置
         twai_filter_config_t &_filter_config; // TWAI过滤器配置
+        QueueHandle_t &_beep_queue;           // 蜂鸣器消息队列
         QueueHandle_t &_tx_queue;             // 发送消息队列
         QueueHandle_t &_rx_queue;             // 接收消息队列
 

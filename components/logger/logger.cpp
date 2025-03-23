@@ -200,6 +200,8 @@ bool LoggerBase::is_string_group_exists(const std::vector<std::string> &string_g
         }
     }
 
+    target_line.erase(target_line.find_last_not_of("\n") + 1);
+
     FILE *temp_file = fopen(_current_file_path.c_str(), "r");
     if (!temp_file)
     {
@@ -227,14 +229,14 @@ bool LoggerBase::log_string_group(const std::vector<std::string> &string_group, 
 {
     if (!is_initialized || !file)
     {
-        printf("Logger not initialized or file not open!\n");
+        ESP_LOGE(TAG, "Logger not initialized or file not open!");
         return false;
     }
 
     // 检查字符串组是否已存在
     if (is_string_group_exists(string_group, delimiter))
     {
-        printf("String group already exists. Skipping write.\n");
+        ESP_LOGE(TAG, "String group already exists. Skipping write.");
         return false;
     }
 
@@ -253,14 +255,41 @@ bool LoggerBase::log_string_group(const std::vector<std::string> &string_group, 
     if (write_to_file(line + "\n"))
     {
         line_count++; // 更新行数
-        printf("String group written to file: %s\n", line.c_str());
+        ESP_LOGI(TAG, "String group written to file: %s", line.c_str());
         return true;
     }
     else
     {
-        printf("Failed to write string group to file!\n");
+        ESP_LOGE(TAG, "Failed to write string group to file!");
         return false;
     }
+}
+
+std::string LoggerBase::find_string_group_key(const std::string &key_string, const std::string &delimiter)
+{
+    FILE *temp_file = fopen(_current_file_path.c_str(), "r");
+    if (!temp_file)
+    {
+        ESP_LOGE(TAG, "Failed to open file for reading.");
+        return "";
+    }
+
+    char buffer[256];
+    while (fgets(buffer, sizeof(buffer), temp_file))
+    {
+        std::string line(buffer);
+        if (std::string::npos != line.find(key_string))
+        {
+            size_t dotPos = line.find_last_of(delimiter);
+            ESP_LOGE(TAG, "Find Match SSID:=%s KEY:=%s", key_string.c_str(), line.substr(dotPos + 1).c_str());
+            fclose(temp_file);
+            return line.substr(dotPos + 1);
+        }
+    }
+
+    ESP_LOGE(TAG, "Not Find Match SSID:=%s", key_string.c_str());
+    fclose(temp_file);
+    return "";
 }
 
 void LoggerBase::shutdown()

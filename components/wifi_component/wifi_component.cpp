@@ -6,6 +6,11 @@ decltype(WiFiComponent::_wifi_state) WiFiComponent::_wifi_state{""};
 
 WiFiComponent::WiFiComponent(SemaphoreHandle_t &prompt_change, EventGroupHandle_t &wifi_event) : initialized(false), _prompt_change_sem(prompt_change), _wifi_event(wifi_event), _wifikey_logger("/sdcard/wifi")
 {
+    initializeWiFi();
+    if (false == _wifikey_logger.init("wifi_key.txt"))
+    {
+        ESP_LOGE(TAG, "Failed to Init WifiLogger");
+    }
 }
 
 WiFiComponent::~WiFiComponent()
@@ -60,7 +65,6 @@ void WiFiComponent::eventHandler(void *arg, esp_event_base_t event_base, int32_t
 
 bool WiFiComponent::connect(const std::string &ssid, const std::string &password, int timeout_ms)
 {
-    initializeWiFi();
     wifi_config_t wifi_config = {0};
     strlcpy((char *)wifi_config.sta.ssid, ssid.c_str(), sizeof(wifi_config.sta.ssid));
     if (!password.empty())
@@ -75,12 +79,14 @@ bool WiFiComponent::connect(const std::string &ssid, const std::string &password
 
     if (ret == ESP_OK)
     {
-        if (_wifikey_logger.init("wifi_key.txt"))
+        if (_wifikey_logger.get_init_state() == false)
         {
-            const std::vector<std::string> string_group{ssid, password};
-            _wifikey_logger.log_string_group(string_group, ":");
-            _wifikey_logger.shutdown();
+            _wifikey_logger.init("wifi_key.txt");
         }
+
+        const std::vector<std::string> string_group{ssid, password};
+        _wifikey_logger.log_string_group(string_group, ":");
+        _wifikey_logger.shutdown();
     }
 
     return (bits & CONNECTED_BIT) != 0;
@@ -131,8 +137,19 @@ void WiFiComponent::registerConsoleCommands()
         .func_w_context = &WiFiComponent::disconnectCommand, // Use context-aware function
         .context = this                                      // Pass the instance pointer as context
     };
-
     ESP_ERROR_CHECK(esp_console_cmd_register(&disconnect_cmd));
+
+    // Register 'disconnect' command
+    const esp_console_cmd_t wifi_scan = {
+        .command = "wifi_scan",
+        .help = "Scan current WiFi ap",
+        .hint = NULL,
+        .func = NULL, // Not used
+        .argtable = NULL,
+        .func_w_context = &WiFiComponent::scanCommand, // Use context-aware function
+        .context = this                                // Pass the instance pointer as context
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&wifi_scan));
 }
 
 // 修改：调整函数签名以匹配 esp_console_cmd_func_with_context_t
@@ -184,5 +201,66 @@ int WiFiComponent::disconnectCommand(void *context, int argc, char **argv)
     {
         ESP_LOGE(instance->TAG, "Failed to disconnect from WiFi");
         return 1;
+    }
+}
+
+// 修改：调整函数签名以匹配 esp_console_cmd_func_with_context_t
+int WiFiComponent::scanCommand(void *context, int argc, char **argv)
+{
+    // Get the instance from context
+    WiFiComponent *instance = static_cast<WiFiComponent *>(context);
+    instance->wifi_scan();
+    return 0;
+}
+
+/* Initialize Wi-Fi as sta and set scan method */
+void WiFiComponent::wifi_scan()
+{
+    //     ESP_ERROR_CHECK(esp_netif_init());
+    //     ESP_ERROR_CHECK(esp_event_loop_create_default());
+    //     esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+    //     assert(sta_netif);
+    //
+    //     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    //     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    uint16_t number = 16;
+    wifi_ap_record_t ap_info[16];
+    uint16_t ap_count = 0;
+    memset(ap_info, 0, sizeof(ap_info));
+    //
+    //     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    //     ESP_ERROR_CHECK(esp_wifi_start());
+
+#ifdef USE_CHANNEL_BITMAP
+    wifi_scan_config_t *scan_config = (wifi_scan_config_t *)calloc(1, sizeof(wifi_scan_config_t));
+    if (!scan_config)
+    {
+        ESP_LOGE(TAG, "Memory Allocation for scan config failed!");
+        return;
+    }
+    array_2_channel_bitmap(channel_list, CHANNEL_LIST_SIZE, scan_config);
+    esp_wifi_scan_start(scan_config, true);
+    free(scan_config);
+
+#else
+    esp_wifi_scan_start(NULL, true);
+#endif /*USE_CHANNEL_BITMAP*/
+
+    ESP_LOGI(TAG, "Max AP number ap_info can hold = %u", number);
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
+    ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
+    for (int i = 0; i < number; i++)
+    {
+        std::string ssid(reinterpret_cast<const char *>(ap_info[i].ssid));
+        // ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
+        // ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
+        std::string key = _wifikey_logger.find_string_group_key(ssid);
+        if ("" != key)
+        {
+            connect(ssid, key, 10000);
+            break;
+        }
     }
 }

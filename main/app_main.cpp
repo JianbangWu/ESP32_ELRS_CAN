@@ -34,6 +34,7 @@ extern "C" void app_main(void)
     setenv("TZ", "CST-8", 1);
     tzset();
 
+    /* 启动时间 */
     std::chrono::time_point<std::chrono::steady_clock> origin_time = std::chrono::steady_clock::now();
 
     // 初始化默认事件循环
@@ -43,37 +44,35 @@ extern "C" void app_main(void)
         ESP_LOGE("Main", "Failed to create default event loop: %s", esp_err_to_name(ret));
         return;
     }
-
-    QueueHandle_t twai_tx_queue = xQueueCreate(10, sizeof(twai_message_t));
-    QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
-    TWAI_Device twai_obj(twai_tx_queue, twai_rx_queue, origin_time);
-
-    EventGroupHandle_t wifi_event_group = xEventGroupCreate();
-
-    SemaphoreHandle_t sntp_sem = xSemaphoreCreateBinary();
-    SNTPManager sntp_obj(sntp_sem, wifi_event_group);
-    RTC ds3231_obj(sntp_sem);
-
-    printf("\033[92;45m RTC_IMTE: CST-8:=%s \033[0m \r\n", ds3231_obj.get_cst8_time().c_str());
-
-    SDCard sd_obj;
-    ELRS elrs_obj;
-
+    /* 蜂鸣器 */
     QueueHandle_t beep_queue = xQueueCreate(5, sizeof(BeeperMessage));
     Buzzer buzzer_obj(beep_queue);
-
+    /* TWAI外设初始化 */
+    QueueHandle_t twai_tx_queue = xQueueCreate(10, sizeof(twai_message_t));
+    QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
+    TWAI_Device twai_obj(beep_queue, twai_tx_queue, twai_rx_queue, origin_time);
+    /* WIFI事件 */
+    EventGroupHandle_t wifi_event_group = xEventGroupCreate();
+    /* SNTP服务 */
+    SemaphoreHandle_t sntp_sem = xSemaphoreCreateBinary();
+    SNTPManager sntp_obj(sntp_sem, wifi_event_group);
+    /* RCT服务 */
+    RTC ds3231_obj(beep_queue, sntp_sem);
+    printf("\033[92;45m RTC_IMTE: CST-8:=%s \033[0m \r\n", ds3231_obj.get_cst8_time().c_str());
+    /* SD-Card */
+    SDCard sd_obj;
+    /* ELRS解析业务 */
+    ELRS elrs_obj(twai_tx_queue, 0x12345678UL);
+    /* 串口终端控制台 */
     console_obj = new USER_CONSOLE(CmdFilesystem::_prompt_change_sem, CmdFilesystem::_current_path, WiFiComponent::_wifi_state);
-
+    /* WIFI业务初始化 */
     WiFiComponent wifi(CmdFilesystem::_prompt_change_sem, wifi_event_group);
     wifi.registerConsoleCommands();
+
+    /* 注册终端命令 */
     CmdSystem::registerSystem();
     CmdNVS::registerNVS();
     CmdFilesystem::registerCommands();
-    //
-    //     auto current_time = std::chrono::steady_clock::now();
-    //     auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(current_time - origin_time).count();
-    //
-    //     ESP_LOGI("MAIN", "Boot = %lld", timestamp);
 
     while (1)
     {

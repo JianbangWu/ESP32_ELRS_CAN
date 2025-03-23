@@ -140,7 +140,8 @@ std::string TWAI_Device::get_date(std::time_t &time)
 }
 
 // 构造函数:初始化TWAI设备
-TWAI_Device::TWAI_Device(QueueHandle_t &tx_queue,
+TWAI_Device::TWAI_Device(QueueHandle_t &beep_queue,
+                         QueueHandle_t &tx_queue,
                          QueueHandle_t &rx_queue,
                          std::chrono::time_point<std::chrono::steady_clock> &origin_time,
                          gpio_num_t tx_gpio_num,
@@ -154,6 +155,7 @@ TWAI_Device::TWAI_Device(QueueHandle_t &tx_queue,
       _std_gpio_num(std_gpio_num),
       _timing_config(timing_config),
       _filter_config(filter_config),
+      _beep_queue(beep_queue),
       _tx_queue(tx_queue),
       _rx_queue(rx_queue),
       _twai_logger("/sdcard/twai")

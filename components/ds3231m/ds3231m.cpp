@@ -11,6 +11,8 @@
 #include "driver/gpio.h"
 #include "ds3231m.hpp"
 
+#include "beep.hpp"
+
 static const uint32_t StackSize = 1024 * 5;
 
 void IRAM_ATTR RTC::gpio_isr_handler(void *arg)
@@ -31,20 +33,27 @@ void RTC::task(void)
         {
             std::time_t sys_now = std::time(nullptr);
             std::tm *time_utc0 = gmtime(&sys_now);
-            reset();
+            reg.status.oscillator_is_stop = 0;
+            reg.control.close_oscillator = 0;
+            set_config();
+            set_status();
             set_time(time_utc0);
             ESP_LOGI(TAG, "UTC0:=%s", get_utc0_time().c_str());
+            get_config();
+            get_status();
         }
     }
 }
 
-RTC::RTC(SemaphoreHandle_t &sntp_sem,
+RTC::RTC(QueueHandle_t &beep_queue,
+         SemaphoreHandle_t &sntp_sem,
          gpio_num_t rst_pin,
          gpio_num_t init_pin,
          gpio_num_t clock_out_pin,
          gpio_num_t sda_pin,
          gpio_num_t scl_pin,
-         uint16_t dev_addr) : _sntp_sem(sntp_sem),
+         uint16_t dev_addr) : _beep_queue(beep_queue),
+                              _sntp_sem(sntp_sem),
                               _rst_io_pin(rst_pin),
                               _int_io_pin(init_pin),
                               _clock_out_pin(clock_out_pin)
@@ -81,8 +90,9 @@ RTC::RTC(SemaphoreHandle_t &sntp_sem,
     ESP_ERROR_CHECK(i2c_master_bus_add_device((bus_handle), &(dev_cfg), &(dev_handle)));
     init_io();
     get_config();
+    get_status();
 
-    if (reg.status.oscillator_is_stop == 1)
+    if (reg.control.close_oscillator == 1)
     {
         ESP_LOGE(TAG, "RTC BAT Was Error!");
         ESP_LOGE(TAG, "Time Need Calibrate!");
@@ -102,6 +112,9 @@ RTC::RTC(SemaphoreHandle_t &sntp_sem,
         if (settimeofday(&tv, NULL) == 0)
         {
             ESP_LOGI(TAG, "System RTC updated successfully!");
+            struct BeeperMessage beep_msg{.frequency = 2700, .duration = 200};
+            xQueueSend(_beep_queue, &beep_msg, 0);
+            xQueueSend(_beep_queue, &beep_msg, 0);
         }
         else
         {
@@ -194,6 +207,12 @@ void RTC::get_config(void)
 
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &temp_add, 1, &temp_buff, sizeof(temp_buff), -1));
     std::memcpy(&reg.control, &temp_buff, sizeof(temp_buff));
+
+    ESP_LOGD(TAG, "Get Control Values: alarm1=%d, alarm2=%d, int_pin=%d, reserve=%d, temp_conv=%d, sq_wave=%d, osc=%d, Binary=%08b",
+             reg.control.alarm1_enable, reg.control.alarm2_enable, reg.control.interrupt_pin_enable,
+             reg.control.reserve, reg.control.set_temperature_convert,
+             reg.control.set_bat_backed_square_wave_enable, reg.control.close_oscillator,
+             *reinterpret_cast<const uint8_t *>(&reg.control));
 }
 
 void RTC::get_status(void)
@@ -203,12 +222,22 @@ void RTC::get_status(void)
 
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, &temp_add, 1, &temp_buff, sizeof(temp_buff), -1));
     std::memcpy(&reg.status, &temp_buff, sizeof(temp_buff));
+
+    ESP_LOGD(TAG, "Get Status Values: alarm1=%d, alarm2=%d, is_busy=%d, 32khz=%d, reserve=%d, osc_stop=%d, Binary=%08b",
+             reg.status.alarm1_flag, reg.status.alarm2_flag, reg.status.is_busy,
+             reg.status.set_32khz_output, reg.status.reserve, reg.status.oscillator_is_stop,
+             *reinterpret_cast<const uint8_t *>(&reg.status));
 }
 
 /* SET */
 void RTC::set_config(void)
 {
     uint8_t temp_add = REG_CONTROL;
+    ESP_LOGD(TAG, "Set Control Values: alarm1=%d, alarm2=%d, int_pin=%d, reserve=%d, temp_conv=%d, sq_wave=%d, osc=%d, Binary=%08b",
+             reg.control.alarm1_enable, reg.control.alarm2_enable, reg.control.interrupt_pin_enable,
+             reg.control.reserve, reg.control.set_temperature_convert,
+             reg.control.set_bat_backed_square_wave_enable, reg.control.close_oscillator,
+             *reinterpret_cast<const uint8_t *>(&reg.control));
     ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, &temp_add, 1, -1));
     ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, (uint8_t *)&reg.control, sizeof(reg.control), -1));
 }
@@ -216,6 +245,10 @@ void RTC::set_config(void)
 void RTC::set_status(void)
 {
     uint8_t temp_add = REG_STATUS;
+    ESP_LOGD(TAG, "Set Status Values: alarm1=%d, alarm2=%d, is_busy=%d, 32khz=%d, reserve=%d, osc_stop=%d, Binary=%08b",
+             reg.status.alarm1_flag, reg.status.alarm2_flag, reg.status.is_busy,
+             reg.status.set_32khz_output, reg.status.reserve, reg.status.oscillator_is_stop,
+             *reinterpret_cast<const uint8_t *>(&reg.status));
     ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, &temp_add, 1, -1));
     ESP_ERROR_CHECK(i2c_master_transmit(dev_handle, (uint8_t *)&reg.status, sizeof(reg.status), -1));
 }
@@ -266,6 +299,8 @@ std::string RTC::get_cst8_time()
     const size_t bufferSize = 64;
     char buffer[bufferSize];
     struct tm *utc0 = get_time();
+    setenv("TZ", "CST-8", 1);
+    tzset();
     time_t utc_time_t = mktime(utc0);
     struct tm *local_time = localtime(&utc_time_t);
 

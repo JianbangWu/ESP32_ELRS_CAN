@@ -18,6 +18,8 @@ extern "C"
     private:
         const char *TAG = "DS3231M";
 
+        QueueHandle_t &_beep_queue; // 蜂鸣器消息队列
+
         SemaphoreHandle_t _isr_sem;
         SemaphoreHandle_t _sntp_sem;
 
@@ -63,7 +65,7 @@ extern "C"
                 uint8_t alarm1_enable : 1;
                 uint8_t alarm2_enable : 1;
                 uint8_t interrupt_pin_enable : 1;
-                uint8_t : 2;
+                uint8_t reserve : 2;
                 uint8_t set_temperature_convert : 1;
                 uint8_t set_bat_backed_square_wave_enable : 1;
                 uint8_t close_oscillator : 1;
@@ -74,7 +76,7 @@ extern "C"
                 uint8_t alarm2_flag : 1;
                 uint8_t is_busy : 1;
                 uint8_t set_32khz_output : 1;
-                uint8_t : 3;
+                uint8_t reserve : 3;
                 uint8_t oscillator_is_stop : 1;
             } status;
 
@@ -99,7 +101,8 @@ extern "C"
         uint8_t bcd_to_dec(uint8_t bcd) { return ((bcd >> 4) * 10) + (bcd & 0x0F); }
 
     public:
-        RTC(QueueHandle_t &rtc_handle,
+        RTC(QueueHandle_t &beep_queue,
+            QueueHandle_t &rtc_handle,
             gpio_num_t rst_pin = GPIO_NUM_8,
             gpio_num_t init_pin = GPIO_NUM_18,
             gpio_num_t _clock_out_pin = GPIO_NUM_17,

@@ -36,6 +36,7 @@ extern "C"
       bool connect(const std::string &ssid, const std::string &password, int timeout_ms = 10000);
       bool disconnect();
       bool isConnected();
+      void wifi_scan();
 
       void registerConsoleCommands();
 
@@ -57,6 +58,7 @@ extern "C"
       // 修改：调整函数签名以匹配 esp_console_cmd_func_with_context_t
       static int connectCommand(void *context, int argc, char **argv);
       static int disconnectCommand(void *context, int argc, char **argv);
+      static int scanCommand(void *context, int argc, char **argv);
    };
 #ifdef __cplusplus
 }

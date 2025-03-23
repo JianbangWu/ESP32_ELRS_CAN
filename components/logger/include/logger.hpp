@@ -35,9 +35,11 @@ extern "C"
         void log(const std::string &message);
         void log(const std::string &message, int max_lines);
 
-        bool is_string_group_exists(const std::vector<std::string> &string_group, const std::string &delimiter);
+        bool is_string_group_exists(const std::vector<std::string> &string_group, const std::string &delimiter = ":");
 
-        bool log_string_group(const std::vector<std::string> &string_group, const std::string &delimiter);
+        bool log_string_group(const std::vector<std::string> &string_group, const std::string &delimiter = ":");
+
+        std::string find_string_group_key(const std::string &string, const std::string &delimiter = ":");
 
         // 提供公共接口关闭文件
         void shutdown();
