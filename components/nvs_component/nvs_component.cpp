@@ -4,7 +4,27 @@
 #include <cinttypes>
 #include <cerrno>
 
-const CmdNVS::TypeStrPair CmdNVS::typeStrPair[] = {
+NVS_DEV::NVS_DEV()
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to initialize NVS after erase: %s", esp_err_to_name(err));
+            return;
+        }
+    }
+    ESP_ERROR_CHECK(err);
+}
+
+NVS_DEV::~NVS_DEV()
+{
+}
+
+const NVS_DEV::TypeStrPair NVS_DEV::typeStrPair[] = {
     {NVS_TYPE_I8, "i8"},
     {NVS_TYPE_U8, "u8"},
     {NVS_TYPE_U16, "u16"},
@@ -17,9 +37,9 @@ const CmdNVS::TypeStrPair CmdNVS::typeStrPair[] = {
     {NVS_TYPE_BLOB, "blob"},
     {NVS_TYPE_ANY, "any"}};
 
-char CmdNVS::current_namespace[16] = "storage";
+char NVS_DEV::current_namespace[16] = "storage";
 
-nvs_type_t CmdNVS::strToType(const char *type)
+nvs_type_t NVS_DEV::strToType(const char *type)
 {
     for (size_t i = 0; i < TYPE_STR_PAIR_SIZE; i++)
     {
@@ -31,7 +51,7 @@ nvs_type_t CmdNVS::strToType(const char *type)
     return NVS_TYPE_ANY;
 }
 
-const char *CmdNVS::typeToStr(nvs_type_t type)
+const char *NVS_DEV::typeToStr(nvs_type_t type)
 {
     for (size_t i = 0; i < TYPE_STR_PAIR_SIZE; i++)
     {
@@ -43,7 +63,7 @@ const char *CmdNVS::typeToStr(nvs_type_t type)
     return "Unknown";
 }
 
-esp_err_t CmdNVS::storeBlob(nvs_handle_t nvs, const char *key, const char *str_values)
+esp_err_t NVS_DEV::storeBlob(nvs_handle_t nvs, const char *key, const char *str_values)
 {
     size_t str_len = strlen(str_values);
     size_t blob_len = str_len / 2;
@@ -104,7 +124,7 @@ esp_err_t CmdNVS::storeBlob(nvs_handle_t nvs, const char *key, const char *str_v
     return err;
 }
 
-void CmdNVS::printBlob(const char *blob, size_t len)
+void NVS_DEV::printBlob(const char *blob, size_t len)
 {
     for (size_t i = 0; i < len; i++)
     {
@@ -113,7 +133,7 @@ void CmdNVS::printBlob(const char *blob, size_t len)
     printf("\n");
 }
 
-esp_err_t CmdNVS::setValueInNVS(const char *key, const char *str_type, const char *str_value)
+esp_err_t NVS_DEV::setValueInNVS(const char *key, const char *str_type, const char *str_value)
 {
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(current_namespace, NVS_READWRITE, &nvs);
@@ -239,7 +259,7 @@ esp_err_t CmdNVS::setValueInNVS(const char *key, const char *str_type, const cha
     return err;
 }
 
-esp_err_t CmdNVS::getValueFromNVS(const char *key, const char *str_type)
+esp_err_t NVS_DEV::getValueFromNVS(const char *key, const char *str_type)
 {
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(current_namespace, NVS_READONLY, &nvs);
@@ -377,7 +397,7 @@ esp_err_t CmdNVS::getValueFromNVS(const char *key, const char *str_type)
     return err;
 }
 
-esp_err_t CmdNVS::eraseKey(const char *key)
+esp_err_t NVS_DEV::eraseKey(const char *key)
 {
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(current_namespace, NVS_READWRITE, &nvs);
@@ -397,7 +417,7 @@ esp_err_t CmdNVS::eraseKey(const char *key)
     return err;
 }
 
-esp_err_t CmdNVS::eraseAll(const char *name)
+esp_err_t NVS_DEV::eraseAll(const char *name)
 {
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(name, NVS_READWRITE, &nvs);
@@ -414,7 +434,7 @@ esp_err_t CmdNVS::eraseAll(const char *name)
     return err;
 }
 
-int CmdNVS::list(const char *part, const char *name, const char *str_type)
+int NVS_DEV::list(const char *part, const char *name, const char *str_type)
 {
     nvs_type_t type = strToType(str_type);
     nvs_iterator_t it = nullptr;
@@ -448,7 +468,7 @@ int CmdNVS::list(const char *part, const char *name, const char *str_type)
     return 0;
 }
 
-int CmdNVS::setValue(int argc, char **argv)
+int NVS_DEV::setValue(int argc, char **argv)
 {
     static struct
     {
@@ -484,7 +504,7 @@ int CmdNVS::setValue(int argc, char **argv)
     return 0;
 }
 
-int CmdNVS::getValue(int argc, char **argv)
+int NVS_DEV::getValue(int argc, char **argv)
 {
     static struct
     {
@@ -517,7 +537,7 @@ int CmdNVS::getValue(int argc, char **argv)
     return 0;
 }
 
-int CmdNVS::eraseValue(int argc, char **argv)
+int NVS_DEV::eraseValue(int argc, char **argv)
 {
     static struct
     {
@@ -547,7 +567,7 @@ int CmdNVS::eraseValue(int argc, char **argv)
     return 0;
 }
 
-int CmdNVS::eraseNamespace(int argc, char **argv)
+int NVS_DEV::eraseNamespace(int argc, char **argv)
 {
     static struct
     {
@@ -577,7 +597,7 @@ int CmdNVS::eraseNamespace(int argc, char **argv)
     return 0;
 }
 
-int CmdNVS::setNamespace(int argc, char **argv)
+int NVS_DEV::setNamespace(int argc, char **argv)
 {
     static struct
     {
@@ -601,7 +621,7 @@ int CmdNVS::setNamespace(int argc, char **argv)
     return 0;
 }
 
-int CmdNVS::listEntries(int argc, char **argv)
+int NVS_DEV::listEntries(int argc, char **argv)
 {
     static struct
     {
@@ -630,7 +650,7 @@ int CmdNVS::listEntries(int argc, char **argv)
     return list(part, name, type);
 }
 
-void CmdNVS::registerNVS()
+void NVS_DEV::registerNVS()
 {
     const esp_console_cmd_t set_cmd = {
         .command = "nvs_set",

@@ -6,7 +6,6 @@
 #include "sd_card.hpp"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
-#include "sdmmc_cmd.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -86,18 +85,17 @@ SDCard::SDCard(gpio_num_t clk_pin,
     ESP_LOGI(TAG, "Initializing SD card");
     ESP_LOGI(TAG, "Using SDMMC peripheral");
 
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
-    slot_config.width = 4;
+    _host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+    _slot_config.width = 4;
 
-    slot_config.clk = clk_pin;
-    slot_config.cmd = cmd_pin;
-    slot_config.d0 = d0_pin;
+    _slot_config.clk = _clk_pin;
+    _slot_config.cmd = _cmd_pin;
+    _slot_config.d0 = _d0_pin;
+    _slot_config.d1 = _d1_pin;
+    _slot_config.d2 = _d2_pin;
+    _slot_config.d3 = _d3_pin;
 
-    slot_config.d1 = d1_pin;
-    slot_config.d2 = d2_pin;
-    slot_config.d3 = d3_pin;
-
-    slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+    _slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
     if (gpio_get_level(det_pin) == 1)
     {
@@ -120,7 +118,7 @@ void SDCard::mount_sd(void)
 {
     ESP_LOGI(TAG, "Mounting filesystem");
 
-    esp_err_t ret = esp_vfs_fat_sdmmc_mount(mt.c_str(), &host, &slot_config, &mount_config, &card);
+    esp_err_t ret = esp_vfs_fat_sdmmc_mount(_mount_point.c_str(), &_host, &_slot_config, &mount_config, &_card);
 
     if (ret != ESP_OK)
     {
@@ -138,7 +136,7 @@ void SDCard::mount_sd(void)
         return;
     }
 
-    ESP_LOGI(TAG, "SD Card mounted at: %s", mt.c_str());
+    ESP_LOGI(TAG, "SD Card mounted at: %s", _mount_point.c_str());
 
     // sdmmc_card_print_info(stdout, card);
 
@@ -151,187 +149,40 @@ void SDCard::mount_sd(void)
 
 void SDCard::unmount_sd(void)
 {
-    esp_vfs_fat_sdcard_unmount(mt.c_str(), card);
+    esp_vfs_fat_sdcard_unmount(_mount_point.c_str(), _card);
     ESP_LOGI(TAG, "Card unmounted");
 }
 
 void SDCard::format_sd(void)
 {
-    esp_err_t err = esp_vfs_fat_sdcard_format_cfg(mt.c_str(), card, &mount_config);
+    esp_err_t err = esp_vfs_fat_sdcard_format_cfg(_mount_point.c_str(), _card, &mount_config);
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "Card Format Err := %x", err);
     }
 }
 
-bool SDCard::isFileSizeExceeded(std::string filename)
+std::string SDCard::get_mount_path(void)
 {
-    FILE *file = fopen(filename.c_str(), "rb"); // 以二进制只读模式打开文件
-    if (!file)
-    {
-        return false;
-    }
-
-    // 获取文件大小
-    fseek(file, 0, SEEK_END);    // 移动到文件末尾
-    long fileSize = ftell(file); // 获取文件大小
-    fclose(file);                // 关闭文件
-
-    // 检查文件大小是否超过限制
-    return fileSize > MAX_FILE_SIZE;
+    return _mount_point;
 }
 
-bool SDCard::writeFile(const std::string &filename, const std::vector<uint8_t> &data)
+void SDCard::set_card_handle(sdmmc_card_t *card)
 {
-    FILE *file = fopen(filename.c_str(), "ab"); // 以二进制追加模式打开文件
-    if (!file)
-    {
-        // 文件打开失败，可能是路径错误或文件系统未挂载
-        return false;
-    }
-
-    // 写入数据
-    size_t bytesWritten = fwrite(data.data(), sizeof(uint8_t), data.size(), file);
-    fclose(file); // 关闭文件
-
-    // 检查是否成功写入所有数据
-    return bytesWritten == data.size();
+    _card = card;
 }
 
-void SDCard::read_user_data_to_serial(const char *user_data_filename)
+sdmmc_card_t *&SDCard::get_card_handle(void)
 {
-    FILE *file = fopen(user_data_filename, "r");
-    if (file == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to open user data file for reading");
-        return;
-    }
-
-    char buffer[128];
-    while (fgets(buffer, sizeof(buffer), file) != NULL)
-    {
-        printf("%s", buffer); // Output to serial
-    }
-
-    fclose(file);
+    return _card;
 }
 
-std::vector<std::string> SDCard::getFileList(const std::string &directory)
+sdmmc_host_t &SDCard::get_host_handle(void)
 {
-    std::vector<std::string> fileList;
-
-    // 打开目录
-    DIR *dir = opendir(directory.c_str());
-    if (!dir)
-    {
-        // 目录打开失败，可能是路径错误或文件系统未挂载
-        perror("Failed to open directory");
-        return fileList;
-    }
-
-    // 遍历目录中的每个条目
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != nullptr)
-    {
-        // 忽略 "." 和 ".." 目录
-        if (entry->d_name[0] == '.')
-        {
-            continue;
-        }
-
-        // 将文件名添加到列表中
-        fileList.push_back(entry->d_name);
-    }
-
-    // 关闭目录
-    closedir(dir);
-
-    return fileList;
+    return _host;
 }
 
-bool SDCard::write_json_to_file(const char *filename, cJSON *json)
+sdmmc_slot_config_t &SDCard::get_slot_config(void)
 {
-    if (!json)
-    {
-        ESP_LOGE(TAG, "Invalid JSON object");
-        return false;
-    }
-
-    // 将 JSON 对象转换为字符串
-    char *json_string = cJSON_Print(json);
-    if (!json_string)
-    {
-        ESP_LOGE(TAG, "Failed to convert JSON to string");
-        return false;
-    }
-
-    // 使用 .txt 写入
-    char json_filepath[128];
-    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mt.c_str(), filename);
-    ESP_LOGI(TAG, "Writing JSON to: [%s]", json_filepath);
-
-    FILE *file = fopen(json_filepath, "w");
-    if (!file)
-    {
-        ESP_LOGE(TAG, "Failed to open file: %s, errno: %d", json_filepath, errno);
-        cJSON_free(json_string);
-        return false;
-    }
-
-    fprintf(file, "%s", json_string); // 写入 JSON 字符串
-    fclose(file);
-    cJSON_free(json_string);
-
-    return true;
-}
-
-// 从文件读取 JSON 数据
-cJSON *SDCard::read_json_from_file(const char *filename)
-{
-    // 读取 JSON 文件路径
-    char json_filepath[128];
-    snprintf(json_filepath, sizeof(json_filepath), "%s/%s", mt.c_str(), filename);
-    ESP_LOGI(TAG, "Reading JSON from: [%s]", json_filepath);
-
-    // 打开文件
-    FILE *file = fopen(json_filepath, "r");
-    if (!file)
-    {
-        ESP_LOGE(TAG, "Failed to open file: %s, errno: %d", json_filepath, errno);
-        return NULL;
-    }
-
-    // 获取文件大小
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    // 分配内存并读取文件内容
-    char *json_data = (char *)malloc(file_size + 1);
-    if (!json_data)
-    {
-        ESP_LOGE(TAG, "Failed to allocate memory for JSON data");
-        fclose(file);
-        return NULL;
-    }
-
-    fread(json_data, 1, file_size, file);
-    json_data[file_size] = '\0'; // 添加字符串结束符
-    fclose(file);
-
-    ESP_LOGI(TAG, "Raw JSON read from file: %s", json_data);
-
-    // 解析 JSON 数据
-    cJSON *json = cJSON_Parse(json_data);
-    if (!json)
-    {
-        ESP_LOGE(TAG, "Failed to parse JSON data from file: %s", json_filepath);
-    }
-    else
-    {
-        ESP_LOGI(TAG, "JSON successfully parsed from file: %s", json_filepath);
-    }
-
-    free(json_data); // 释放文件内容
-    return json;     // 返回解析后的 JSON 对象
+    return _slot_config;
 }

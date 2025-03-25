@@ -16,12 +16,16 @@ extern "C"
 #include "esp_console.h"
 #include "esp_log.h"
 #include "nvs.h"
+#include "nvs_flash.h"
 #include "argtable3/argtable3.h"
 
-   class CmdNVS
+   class NVS_DEV
    {
    public:
       static void registerNVS();
+      static char current_namespace[16];
+      NVS_DEV();
+      ~NVS_DEV();
 
    private:
       static int setValue(int argc, char **argv);
@@ -44,8 +48,8 @@ extern "C"
 
       static constexpr size_t TYPE_STR_PAIR_SIZE = 11;
       static constexpr const char *ARG_TYPE_STR = "type can be: i8, u8, i16, u16 i32, u32 i64, u64, str, blob";
-      static char current_namespace[16];
-      static constexpr const char *TAG = "CmdNVS";
+
+      static constexpr const char *TAG = "NVS_DEV";
 
       struct TypeStrPair
       {

@@ -12,6 +12,7 @@
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_handle.hpp"
 
 #include "sntp_service.hpp"
 #include "elrs.hpp"
@@ -25,6 +26,8 @@
 #include "system_cmd.hpp"
 #include "nvs_component.hpp"
 #include "filesystem_cmd.hpp"
+
+#include "usb_msc.hpp"
 
 USER_CONSOLE *console_obj;
 
@@ -44,38 +47,52 @@ extern "C" void app_main(void)
         ESP_LOGE("Main", "Failed to create default event loop: %s", esp_err_to_name(ret));
         return;
     }
-    /* 蜂鸣器 */
-    QueueHandle_t beep_queue = xQueueCreate(5, sizeof(BeeperMessage));
-    Buzzer buzzer_obj(beep_queue);
-    /* TWAI外设初始化 */
-    QueueHandle_t twai_tx_queue = xQueueCreate(10, sizeof(twai_message_t));
-    QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
-    TWAI_Device twai_obj(beep_queue, twai_tx_queue, twai_rx_queue, origin_time);
-    /* WIFI事件 */
-    EventGroupHandle_t wifi_event_group = xEventGroupCreate();
-    /* SNTP服务 */
-    SemaphoreHandle_t sntp_sem = xSemaphoreCreateBinary();
-    SNTPManager sntp_obj(sntp_sem, wifi_event_group);
-    /* RCT服务 */
-    RTC ds3231_obj(beep_queue, sntp_sem);
-    printf("\033[92;45m RTC_IMTE: CST-8:=%s \033[0m \r\n", ds3231_obj.get_cst8_time().c_str());
-    /* SD-Card */
-    SDCard sd_obj;
-    /* ELRS解析业务 */
-    ELRS elrs_obj(twai_tx_queue, 0x12345678UL);
-    /* 串口终端控制台 */
-    console_obj = new USER_CONSOLE(CmdFilesystem::_prompt_change_sem, CmdFilesystem::_current_path, WiFiComponent::_wifi_state);
-    /* WIFI业务初始化 */
-    WiFiComponent wifi(CmdFilesystem::_prompt_change_sem, wifi_event_group);
-    wifi.registerConsoleCommands();
 
-    /* 注册终端命令 */
-    CmdSystem::registerSystem();
-    CmdNVS::registerNVS();
-    CmdFilesystem::registerCommands();
+    NVS_DEV nvs_obj;
 
-    while (1)
+    if (1 == USB_MSC::get_init_msc_key())
     {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        USB_MSC msc_obj;
+        while (1)
+        {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+    else
+    {
+        /* SD-Card */
+        SDCard sd_obj;
+        /* 蜂鸣器 */
+        QueueHandle_t beep_queue = xQueueCreate(5, sizeof(BeeperMessage));
+        Buzzer buzzer_obj(beep_queue);
+        /* TWAI外设初始化 */
+        QueueHandle_t twai_tx_queue = xQueueCreate(10, sizeof(twai_message_t));
+        QueueHandle_t twai_rx_queue = xQueueCreate(10, sizeof(twai_message_t));
+        TWAI_Device twai_obj(beep_queue, twai_tx_queue, twai_rx_queue, origin_time);
+        /* WIFI事件 */
+        EventGroupHandle_t wifi_event_group = xEventGroupCreate();
+        /* SNTP服务 */
+        SemaphoreHandle_t sntp_sem = xSemaphoreCreateBinary();
+        SNTPManager sntp_obj(sntp_sem, wifi_event_group);
+        /* RCT服务 */
+        RTC ds3231_obj(beep_queue, sntp_sem);
+        printf("\033[92;45m RTC_IMTE: CST-8:=%s \033[0m \r\n", ds3231_obj.get_cst8_time().c_str());
+
+        /* ELRS解析业务 */
+        // ELRS elrs_obj(twai_tx_queue, 0x12345678UL);
+        /* 串口终端控制台 */
+        console_obj = new USER_CONSOLE(CmdFilesystem::_prompt_change_sem, CmdFilesystem::_current_path, WiFiComponent::_wifi_state);
+        /* WIFI业务初始化 */
+        WiFiComponent wifi(CmdFilesystem::_prompt_change_sem, wifi_event_group);
+        wifi.registerConsoleCommands();
+
+        /* 注册终端命令 */
+        CmdSystem::registerSystem();
+        CmdFilesystem::registerCommands();
+        USB_MSC::registerMount();
+        while (1)
+        {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
     }
 }

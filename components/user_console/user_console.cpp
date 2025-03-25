@@ -12,6 +12,8 @@
 #include "esp_vfs_dev.h"
 #include "esp_vfs_cdcacm.h"
 #include "esp_vfs_console.h"
+#include "driver/uart.h"
+#include "driver/uart_vfs.h"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 
@@ -134,6 +136,34 @@ void USER_CONSOLE::initialize_console_peripheral()
 
     /* Tell vfs to use usb-serial-jtag driver */
     usb_serial_jtag_vfs_use_driver();
+#elif defined(CONFIG_ESP_CONSOLE_UART_DEFAULT) || defined(CONFIG_ESP_CONSOLE_UART_CUSTOM)
+
+    /* Minicom, screen, idf_monitor send CR when ENTER key is pressed */
+    uart_vfs_dev_port_set_rx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CR);
+    /* Move the caret to the beginning of the next line on '\n' */
+    uart_vfs_dev_port_set_tx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CRLF);
+
+    /* Configure UART. Note that REF_TICK is used so that the baud rate remains
+     * correct while APB frequency is changing in light sleep mode.
+     */
+    const uart_config_t uart_config = {
+        .baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+#if SOC_UART_SUPPORT_REF_TICK
+        .source_clk = UART_SCLK_REF_TICK,
+#elif SOC_UART_SUPPORT_XTAL_CLK
+        .source_clk = UART_SCLK_XTAL,
+#endif
+    };
+    /* Install UART driver for interrupt-driven reads and writes */
+    ESP_ERROR_CHECK(uart_driver_install(static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM), 256, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM), &uart_config));
+
+    /* Tell VFS to use UART driver */
+    uart_vfs_dev_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
+
 #else
 #error Unsupported console type
 #endif
@@ -186,8 +216,8 @@ USER_CONSOLE::USER_CONSOLE(SemaphoreHandle_t &prompt_change,
         return; // 或者抛出异常
     }
 
-    initialize_nvs();
-    initialize_filesystem();
+    // initialize_nvs();
+    // initialize_filesystem();
     ESP_LOGI(TAG, "Command history enabled");
 
     initialize_console_peripheral();
